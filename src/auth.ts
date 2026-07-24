@@ -1,6 +1,6 @@
 import { HTTPError } from "./http";
 
-const passwordIterations = 210_000;
+const passwordIterations = 100_000;
 const sessionLifetimeMilliseconds = 30 * 24 * 60 * 60 * 1000;
 const sessionCookieName = "hawk_session";
 const encoder = new TextEncoder();
@@ -14,6 +14,7 @@ export interface AuthenticatedUser {
 interface UserRow extends AuthenticatedUser {
   password_salt: string;
   password_hash: string;
+  password_iterations: number;
 }
 
 export async function registerUser(
@@ -51,9 +52,11 @@ export async function registerUser(
   try {
     await db.batch([
       db.prepare(`
-        INSERT INTO users (id, email, nick, password_salt, password_hash, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).bind(id, email, nick, salt, passwordHash, createdAt),
+        INSERT INTO users (
+          id, email, nick, password_salt, password_hash,
+          password_iterations, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(id, email, nick, salt, passwordHash, passwordIterations, createdAt),
       db.prepare(`
         INSERT INTO user_sessions (token_hash, user_id, created_at, expires_at)
         VALUES (?, ?, ?, ?)
@@ -77,11 +80,19 @@ export async function loginUser(
   const email = parseEmail(body.email);
   const password = requireString(body.password, "password");
   const user = await db.prepare(`
-    SELECT id, email, nick, password_salt, password_hash
+    SELECT id, email, nick, password_salt, password_hash, password_iterations
     FROM users
     WHERE email = ? COLLATE NOCASE
   `).bind(email).first<UserRow>();
-  if (user === null || !await verifyPassword(password, user.password_salt, user.password_hash)) {
+  if (
+    user === null
+    || !await verifyPassword(
+      password,
+      user.password_salt,
+      user.password_hash,
+      user.password_iterations,
+    )
+  ) {
     throw new HTTPError(401, "invalid_credentials", "Email or password is incorrect.");
   }
   const createdAt = new Date().toISOString();
@@ -170,6 +181,32 @@ async function prepareSession(userID: string) {
 }
 
 async function hashPassword(password: string, salt: string): Promise<string> {
+  return hashPasswordWithIterations(password, salt, passwordIterations);
+}
+
+async function verifyPassword(
+  password: string,
+  salt: string,
+  expectedHash: string,
+  iterations: number,
+): Promise<boolean> {
+  const actual = decodeBase64URL(await hashPasswordWithIterations(password, salt, iterations));
+  const expected = decodeBase64URL(expectedHash);
+  if (actual.length !== expected.length) {
+    return false;
+  }
+  let difference = 0;
+  for (let index = 0; index < actual.length; index += 1) {
+    difference |= (actual[index] ?? 0) ^ (expected[index] ?? 0);
+  }
+  return difference === 0;
+}
+
+async function hashPasswordWithIterations(
+  password: string,
+  salt: string,
+  iterations: number,
+): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
     encoder.encode(password),
@@ -182,29 +219,12 @@ async function hashPassword(password: string, salt: string): Promise<string> {
       name: "PBKDF2",
       hash: "SHA-256",
       salt: decodeBase64URL(salt).buffer as ArrayBuffer,
-      iterations: passwordIterations,
+      iterations,
     },
     key,
     256,
   );
   return encodeBase64URL(new Uint8Array(bits));
-}
-
-async function verifyPassword(
-  password: string,
-  salt: string,
-  expectedHash: string,
-): Promise<boolean> {
-  const actual = decodeBase64URL(await hashPassword(password, salt));
-  const expected = decodeBase64URL(expectedHash);
-  if (actual.length !== expected.length) {
-    return false;
-  }
-  let difference = 0;
-  for (let index = 0; index < actual.length; index += 1) {
-    difference |= (actual[index] ?? 0) ^ (expected[index] ?? 0);
-  }
-  return difference === 0;
 }
 
 function parseEmail(value: unknown): string {

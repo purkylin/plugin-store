@@ -1,4 +1,4 @@
-import { exports } from "cloudflare:workers";
+import { env, exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 const manifest = {
@@ -561,6 +561,13 @@ describe("Plugin Store API", () => {
     expect(account.user).toMatchObject({
       email: "author@example.com",
       nick: "ReviewAuthor",
+    });
+    expect(await env.DB.prepare(`
+      SELECT password_iterations
+      FROM users
+      WHERE email = ?
+    `).bind("author@example.com").first()).toEqual({
+      password_iterations: 100_000,
     });
 
     expect((await authRequest("/api/v1/auth/register", {
