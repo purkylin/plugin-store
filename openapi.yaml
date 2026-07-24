@@ -1,0 +1,626 @@
+openapi: 3.1.0
+info:
+  title: Hawk Plugin Store API
+  version: 1.0.0
+servers:
+  - url: https://hawk-plugin-store.example.workers.dev/api/v1
+paths:
+  /auth/register:
+    post:
+      operationId: registerUser
+      summary: Register a plugin author account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Registered and signed in
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /auth/login:
+    post:
+      operationId: loginUser
+      summary: Sign in a plugin author
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Signed in
+        "401":
+          $ref: "#/components/responses/Error"
+  /auth/logout:
+    post:
+      operationId: logoutUser
+      summary: Revoke the current user session
+      security:
+        - userSession: []
+      responses:
+        "204":
+          description: Signed out
+  /user/submissions:
+    get:
+      operationId: listUserSubmissions
+      summary: List the current user's plugin submissions
+      security:
+        - userSession: []
+      responses:
+        "200":
+          description: Submission history
+        "401":
+          $ref: "#/components/responses/Error"
+  /user/submissions/{submission_id}/cancel:
+    post:
+      operationId: cancelPluginSubmission
+      summary: Cancel the current user's pending plugin submission
+      security:
+        - userSession: []
+      parameters:
+        - $ref: "#/components/parameters/SubmissionID"
+      responses:
+        "200":
+          description: Submission cancelled and available for editing
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /user/me:
+    get:
+      operationId: getCurrentUser
+      summary: Get the current plugin author account
+      security:
+        - userSession: []
+      responses:
+        "200":
+          description: Current user
+        "401":
+          $ref: "#/components/responses/Error"
+  /user/plugins:
+    post:
+      operationId: submitNewPluginForReview
+      summary: Submit a new plugin with a server-generated UUID for review
+      security:
+        - userSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishRequest"
+      responses:
+        "202":
+          description: Waiting for review; the response includes the generated plugin_id
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+  /user/plugins/draft:
+    post:
+      operationId: saveNewPluginDraft
+      summary: Save a new plugin draft with a server-generated UUID
+      security:
+        - userSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishRequest"
+      responses:
+        "201":
+          description: Draft saved without submitting it for review
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+  /user/plugins/{plugin_id}:
+    put:
+      operationId: submitPluginUpdateForReview
+      summary: Submit an update to an owned plugin for administrator review
+      security:
+        - userSession: []
+      parameters:
+        - $ref: "#/components/parameters/PluginID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishRequest"
+      responses:
+        "202":
+          description: Waiting for review
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteOwnedPlugin
+      summary: Permanently delete an owned plugin and all related data
+      security:
+        - userSession: []
+      parameters:
+        - $ref: "#/components/parameters/PluginID"
+      responses:
+        "204":
+          description: Plugin, releases, submissions, and review history deleted
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /user/plugins/{plugin_id}/unpublish:
+    post:
+      operationId: unpublishOwnedPlugin
+      summary: Remove the current user's published plugin from the store
+      security:
+        - userSession: []
+      parameters:
+        - $ref: "#/components/parameters/PluginID"
+      responses:
+        "200":
+          description: Plugin unpublished; releases and review history are preserved
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /user/plugins/{plugin_id}/draft:
+    put:
+      operationId: saveExistingPluginDraft
+      summary: Save or replace an owned plugin draft without submitting it for review
+      security:
+        - userSession: []
+      parameters:
+        - $ref: "#/components/parameters/PluginID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishRequest"
+      responses:
+        "200":
+          description: Draft saved
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /plugins:
+    get:
+      operationId: listPlugins
+      summary: List compatible published plugins
+      parameters:
+        - name: platform
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [ios, tvos]
+        - name: app_version
+          in: query
+          required: true
+          schema:
+            type: string
+          example: 1.4.0
+        - name: type
+          in: query
+          description: Filter by manifest plugin type
+          schema:
+            type: string
+            maxLength: 100
+        - name: q
+          in: query
+          description: Search plugin ID, name, or author
+          schema:
+            type: string
+            maxLength: 100
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [time, downloads]
+            default: time
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        "200":
+          description: A page of compatible plugins
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PluginPage"
+        "400":
+          $ref: "#/components/responses/Error"
+  /plugins/{plugin_id}/manifest:
+    get:
+      operationId: getLatestPluginManifest
+      summary: Download the latest published Hawk plugin manifest
+      parameters:
+        - $ref: "#/components/parameters/PluginID"
+      responses:
+        "200":
+          description: A single Hawk plugin object
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "404":
+          $ref: "#/components/responses/Error"
+  /plugins/{plugin_id}/install-events:
+    post:
+      operationId: recordPluginInstallEvent
+      summary: Idempotently record an install lifecycle event
+      parameters:
+        - $ref: "#/components/parameters/PluginID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InstallEvent"
+      responses:
+        "204":
+          description: Recorded, or the event was recorded previously
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /admin/plugins/{plugin_id}/unpublish:
+    post:
+      operationId: unpublishPlugin
+      summary: Remove a published plugin from the store while preserving its history
+      security:
+        - adminToken: []
+      parameters:
+        - $ref: "#/components/parameters/PluginID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  minLength: 2
+                  maxLength: 500
+      responses:
+        "200":
+          description: Plugin unpublished and returned to the author
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /admin/plugins:
+    get:
+      operationId: listManagedPlugins
+      summary: List published plugins with manifests and compatibility metadata
+      security:
+        - adminToken: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A management page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPluginPage"
+        "401":
+          $ref: "#/components/responses/Error"
+  /admin/reviews:
+    get:
+      operationId: listPendingReviews
+      summary: List plugin submissions waiting for administrator review
+      security:
+        - adminToken: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+      responses:
+        "200":
+          description: Pending review queue
+        "401":
+          $ref: "#/components/responses/Error"
+  /admin/reviews/{submission_id}/accept:
+    post:
+      operationId: acceptPluginSubmission
+      summary: Accept and publish a pending plugin submission
+      security:
+        - adminToken: []
+      parameters:
+        - $ref: "#/components/parameters/SubmissionID"
+      responses:
+        "200":
+          description: Accepted and published
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /admin/reviews/{submission_id}/reject:
+    post:
+      operationId: rejectPluginSubmission
+      summary: Reject a pending plugin submission with a reason
+      security:
+        - adminToken: []
+      parameters:
+        - $ref: "#/components/parameters/SubmissionID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  minLength: 2
+                  maxLength: 500
+      responses:
+        "200":
+          description: Rejected
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    adminToken:
+      type: http
+      scheme: bearer
+    userSession:
+      type: apiKey
+      in: cookie
+      name: hawk_session
+  parameters:
+    PluginID:
+      name: plugin_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9._-]{1,200}$"
+    SubmissionID:
+      name: submission_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    Error:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [email, nick, password, password_confirmation]
+      properties:
+        email:
+          type: string
+          format: email
+        nick:
+          type: string
+          minLength: 2
+          maxLength: 40
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+        password_confirmation:
+          type: string
+          minLength: 8
+          maxLength: 128
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    PluginPage:
+      type: object
+      required: [items, total, page, page_size, total_pages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Plugin"
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          minimum: 1
+        total_pages:
+          type: integer
+          minimum: 0
+    Plugin:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - author
+        - latest_version
+        - updated_at
+        - install_count
+        - manifest_sha256
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        author:
+          type: string
+        icon_url:
+          type: [string, "null"]
+          format: uri
+        latest_version:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        install_count:
+          type: integer
+          minimum: 0
+        manifest_sha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+    AdminPluginPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/Plugin"
+              - type: object
+                required:
+                  - manifest
+                  - platforms
+                  - minimum_ios_version
+                  - minimum_tvos_version
+                properties:
+                  manifest:
+                    type: object
+                    additionalProperties: true
+                  platforms:
+                    type: array
+                    items:
+                      type: string
+                      enum: [ios, tvos]
+                  minimum_ios_version:
+                    type: [string, "null"]
+                  minimum_tvos_version:
+                    type: [string, "null"]
+        next_cursor:
+          type: [string, "null"]
+    InstallEvent:
+      type: object
+      required:
+        - event_id
+        - plugin_id
+        - installation_id
+        - action
+        - app_version
+        - platform
+        - occurred_at
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        plugin_id:
+          type: string
+        installation_id:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum: [install, update, uninstall]
+        from_version:
+          type: [string, "null"]
+        to_version:
+          type: [string, "null"]
+        app_version:
+          type: string
+        platform:
+          type: string
+          enum: [ios, tvos]
+        occurred_at:
+          type: string
+          format: date-time
+    PublishRequest:
+      type: object
+      required: [manifest]
+      properties:
+        manifest:
+          type: object
+          description: For new user submissions, id is generated and overwritten by the server. update_time is always generated by the server.
+          required: [type, name, desc, author, version]
+          additionalProperties: true
+        platforms:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum: [ios, tvos]
+          default: [ios, tvos]
+        minimum_ios_version:
+          type: [string, "null"]
+        minimum_tvos_version:
+          type: [string, "null"]
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string

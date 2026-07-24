@@ -1,0 +1,16 @@
+{
+  "manifest": {
+    "id": "example.hot",
+    "type": "hot",
+    "icon": "https://example.com/plugin-icon.png",
+    "name": "Example Hot",
+    "author": "Example Team",
+    "version": "1.0.0",
+    "update_time": "2026-07-24T08:00:00Z",
+    "desc": "Example Hawk hot-list plugin.",
+    "endpoint": "https://example.com/hot.json"
+  },
+  "platforms": ["ios", "tvos"],
+  "minimum_ios_version": "1.4.0",
+  "minimum_tvos_version": "1.4.0"
+}
