@@ -5,6 +5,7 @@ import type {
   Platform,
   PluginManifestMetadata,
   PublishRequest,
+  UpdateCheckRequest,
 } from "./types";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -122,6 +123,44 @@ export function parseInstallEvent(value: unknown, pathID: string): InstallEvent 
     platform,
     occurred_at: occurredAt,
   };
+}
+
+export function parseUpdateCheckRequest(value: unknown): UpdateCheckRequest {
+  const body = requireRecord(value);
+  const platform = parsePlatform(requireString(body.platform, "platform"));
+  const appVersion = parseVersion(
+    requireString(body.app_version, "app_version"),
+    "app_version",
+  );
+  if (!Array.isArray(body.plugins) || body.plugins.length === 0 || body.plugins.length > 100) {
+    throw new HTTPError(
+      400,
+      "invalid_plugins",
+      "plugins must be an array containing 1 through 100 items.",
+    );
+  }
+
+  const seen = new Set<string>();
+  const plugins = body.plugins.map((value, index) => {
+    const plugin = requireRecord(value);
+    const id = parsePluginID(requireString(plugin.id, `plugins[${index}].id`));
+    if (seen.has(id)) {
+      throw new HTTPError(
+        400,
+        "duplicate_plugin_id",
+        `plugins contains duplicate id: ${id}.`,
+      );
+    }
+    seen.add(id);
+    return {
+      id,
+      version: parseVersion(
+        requireString(plugin.version, `plugins[${index}].version`),
+        `plugins[${index}].version`,
+      ),
+    };
+  });
+  return { platform, app_version: appVersion, plugins };
 }
 
 export function parsePublishRequest(

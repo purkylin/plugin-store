@@ -22,6 +22,87 @@ describe("Plugin Store API", () => {
       platforms: ["ios", "tvos"],
       minimum_ios_version: "1.0.0",
     });
+    const unknownID = "00000000-0000-4000-8000-000000000000";
+
+    const available = await checkUpdates({
+      platform: "ios",
+      app_version: "1.4.0",
+      plugins: [
+        { id: first.pluginID, version: "0.9.0" },
+        { id: unknownID, version: "1.0.0" },
+      ],
+    });
+    expect(available).toMatchObject({
+      update_count: 1,
+      items: [
+        {
+          id: first.pluginID,
+          current_version: "0.9.0",
+          latest_version: "1.0.0",
+          update_available: true,
+          status: "update_available",
+          manifest: {
+            id: first.pluginID,
+            version: "1.0.0",
+          },
+          manifest_sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+        {
+          id: unknownID,
+          latest_version: null,
+          update_available: false,
+          status: "not_found",
+          manifest: null,
+          manifest_sha256: null,
+        },
+      ],
+    });
+
+    expect(await checkUpdates({
+      platform: "ios",
+      app_version: "1.4.0",
+      plugins: [{ id: first.pluginID, version: "1.0.0" }],
+    })).toMatchObject({
+      update_count: 0,
+      items: [{
+        status: "up_to_date",
+        update_available: false,
+        manifest: null,
+      }],
+    });
+
+    expect(await checkUpdates({
+      platform: "ios",
+      app_version: "0.9.0",
+      plugins: [{ id: first.pluginID, version: "0.9.0" }],
+    })).toMatchObject({
+      update_count: 0,
+      items: [{
+        latest_version: "1.0.0",
+        status: "incompatible",
+        update_available: false,
+        manifest: null,
+        manifest_sha256: null,
+      }],
+    });
+
+    const duplicate = await fetchWorker(
+      "https://example.com/api/v1/plugins/check-updates",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          platform: "ios",
+          app_version: "1.4.0",
+          plugins: [
+            { id: first.pluginID, version: "1.0.0" },
+            { id: first.pluginID, version: "0.9.0" },
+          ],
+        }),
+      },
+    );
+    expect(duplicate.status).toBe(400);
+    expect(await duplicate.json()).toMatchObject({ code: "duplicate_plugin_id" });
 
     const catalog = await getCatalog("1.4.0");
     expect(catalog.items).toHaveLength(1);
@@ -140,6 +221,147 @@ describe("Plugin Store API", () => {
       },
     );
     expect(response.status).toBe(404);
+  });
+
+  it("batch imports JSON plugins as drafts and replaces managed fields", async () => {
+    const registration = await authRequest("/api/v1/auth/register", {
+      email: "batch-importer@example.com",
+      nick: "BatchImporter",
+      password: "batch-import-password",
+      password_confirmation: "batch-import-password",
+    });
+    expect(registration.status).toBe(201);
+    const cookie = sessionCookie(registration);
+    const imported = await fetchWorker(
+      "https://example.com/api/v1/user/plugins/import",
+      {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({
+          plugins: [
+            {
+              ...manifest,
+              id: "ignored.first",
+              author: "IgnoredAuthor",
+              update_time: "2000-01-01T00:00:00Z",
+              name: "Imported Direct Manifest",
+            },
+            {
+              manifest: {
+                ...manifest,
+                id: "ignored.second",
+                author: "AnotherIgnoredAuthor",
+                update_time: "2000-01-01T00:00:00Z",
+                name: "Imported Wrapped Manifest",
+              },
+              platforms: ["ios"],
+              minimum_ios_version: "1.2.0",
+            },
+          ],
+        }),
+      },
+    );
+    expect(imported.status).toBe(201);
+    const result = await imported.json<{
+      imported_count: number;
+      items: Array<{ plugin_id: string; status: string; saved_at: string }>;
+    }>();
+    expect(result.imported_count).toBe(2);
+    expect(result.items).toHaveLength(2);
+    expect(new Set(result.items.map((item) => item.plugin_id)).size).toBe(2);
+    for (const item of result.items) {
+      expect(item).toMatchObject({
+        plugin_id: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+        ),
+        status: "draft",
+        saved_at: expect.any(String),
+      });
+      expect(["ignored.first", "ignored.second"]).not.toContain(item.plugin_id);
+    }
+
+    const drafts = await fetchWorker(
+      "https://example.com/api/v1/user/submissions",
+      { headers: { cookie } },
+    ).then((response) => response.json<{
+      items: Array<{
+        status: string;
+        plugin_id: string;
+        manifest: Record<string, unknown>;
+        platforms: string[];
+        minimum_ios_version: string | null;
+      }>;
+    }>());
+    expect(drafts.items).toHaveLength(2);
+    expect(drafts.items.every((item) => item.status === "draft")).toBe(true);
+    expect(drafts.items.every((item) => item.manifest.author === "BatchImporter")).toBe(true);
+    expect(drafts.items.every(
+      (item) => item.manifest.update_time !== "2000-01-01T00:00:00Z",
+    )).toBe(true);
+    expect(new Set(drafts.items.map((item) => item.plugin_id))).toEqual(
+      new Set(result.items.map((item) => item.plugin_id)),
+    );
+    expect(drafts.items).toContainEqual(expect.objectContaining({
+      platforms: ["ios"],
+      minimum_ios_version: "1.2.0",
+    }));
+
+    const invalid = await fetchWorker(
+      "https://example.com/api/v1/user/plugins/import",
+      {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({
+          plugins: [
+            { ...manifest, name: "Would Be Valid" },
+            { type: "hot", version: "1.0.0", desc: "Missing name" },
+          ],
+        }),
+      },
+    );
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toMatchObject({
+      code: "invalid_field",
+      message: expect.stringContaining("plugins[1]"),
+    });
+    const afterInvalid = await fetchWorker(
+      "https://example.com/api/v1/user/submissions",
+      { headers: { cookie } },
+    ).then((response) => response.json<{ items: unknown[] }>());
+    expect(afterInvalid.items).toHaveLength(2);
+
+    const submitted = await fetchWorker(
+      "https://example.com/api/v1/user/plugins/submit-drafts",
+      { method: "POST", headers: { cookie } },
+    );
+    expect(submitted.status).toBe(202);
+    const submittedResult = await submitted.json<{
+      submitted_count: number;
+      items: Array<{ submission_id: string; plugin_id: string; status: string }>;
+    }>();
+    expect(submittedResult).toMatchObject({
+      submitted_count: 2,
+      items: [
+        expect.objectContaining({ status: "pending" }),
+        expect.objectContaining({ status: "pending" }),
+      ],
+    });
+    expect(new Set(submittedResult.items.map((item) => item.plugin_id))).toEqual(
+      new Set(result.items.map((item) => item.plugin_id)),
+    );
+    const pending = await fetchWorker(
+      "https://example.com/api/v1/user/submissions",
+      { headers: { cookie } },
+    ).then((response) => response.json<{ items: Array<{ status: string }> }>());
+    expect(pending.items).toHaveLength(2);
+    expect(pending.items.every((item) => item.status === "pending")).toBe(true);
+
+    for (const item of submittedResult.items) {
+      expect((await fetchWorker(
+        `https://example.com/api/v1/user/submissions/${item.submission_id}/cancel`,
+        { method: "POST", headers: { cookie } },
+      )).status).toBe(200);
+    }
   });
 
   it("saves drafts without changing the approved store manifest", async () => {
@@ -594,6 +816,10 @@ describe("Plugin Store API", () => {
     expect(submitHTML).toContain("更多");
     expect(submitHTML).toContain("删除插件");
     expect(submitHTML).toContain("保存草稿");
+    expect(submitHTML).toContain("批量导入 JSON");
+    expect(submitHTML).toContain('id="import-json-file"');
+    expect(submitHTML).toContain("全部提交审核");
+    expect(submitHTML).not.toContain("scrollIntoView");
     expect(submitHTML).toContain('id="editor-dialog"');
     expect(submitHTML).toContain("plugin-name");
     expect(submitHTML).toContain("plugin-id");
@@ -633,6 +859,26 @@ interface CatalogResponse {
   page: number;
   page_size: number;
   total_pages: number;
+}
+
+interface UpdateCheckBody {
+  platform: "ios" | "tvos";
+  app_version: string;
+  plugins: Array<{ id: string; version: string }>;
+}
+
+function checkUpdates(body: UpdateCheckBody): Promise<{
+  items: Array<Record<string, unknown>>;
+  update_count: number;
+}> {
+  return fetchWorker("https://example.com/api/v1/plugins/check-updates", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  }).then(async (response) => {
+    expect(response.status).toBe(200);
+    return response.json();
+  });
 }
 
 async function getCatalog(

@@ -11,6 +11,7 @@ import { error, handleError, HTTPError, json, readJSON } from "./http";
 import {
   acceptPluginSubmission,
   cancelSubmission,
+  checkPluginUpdates,
   claimPluginID,
   createPluginSubmission,
   deletePluginDraft,
@@ -19,6 +20,7 @@ import {
   getLatestPluginRelease,
   getManifest,
   getPendingSubmission,
+  importPluginDrafts,
   listAdminPlugins,
   listPendingSubmissions,
   listPlugins,
@@ -28,6 +30,7 @@ import {
   rejectSubmission,
   requirePluginOwnership,
   savePluginDraft,
+  submitAllPluginDrafts,
   unpublishOwnedPlugin,
   unpublishPlugin,
 } from "./repository";
@@ -44,6 +47,7 @@ import {
   parsePluginID,
   parsePublishRequest,
   parseSortOrder,
+  parseUpdateCheckRequest,
   parseVersion,
 } from "./validation";
 import { compareVersions } from "./version";
@@ -132,12 +136,27 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method === "POST" && apiPath === "/v1/user/plugins/draft") {
     return saveNewDraft(request, env);
   }
+  if (request.method === "POST" && apiPath === "/v1/user/plugins/import") {
+    return importDrafts(request, env);
+  }
+  if (request.method === "POST" && apiPath === "/v1/user/plugins/submit-drafts") {
+    const user = await requireUser(request, env.DB);
+    const items = await submitAllPluginDrafts(env.DB, user.id);
+    return json({ items, submitted_count: items.length }, 202);
+  }
   if (request.method === "GET" && apiPath === "/v1/admin/reviews") {
     requireAdmin(request, env);
     return json(await listPendingSubmissions(env.DB, parseLimit(url.searchParams.get("limit"))));
   }
   if (request.method === "GET" && apiPath === "/v1/plugins") {
     return catalog(url, env);
+  }
+  if (request.method === "POST" && apiPath === "/v1/plugins/check-updates") {
+    const result = await checkPluginUpdates(
+      env.DB,
+      parseUpdateCheckRequest(await readJSON(request)),
+    );
+    return json(result, 200, { "cache-control": "no-store" });
   }
   if (request.method === "GET" && apiPath === "/v1/admin/plugins") {
     return adminCatalog(request, url, env);
@@ -357,6 +376,80 @@ async function saveNewDraft(request: Request, env: Env): Promise<Response> {
     JSON.stringify(parsed.request.manifest),
   );
   return json({ plugin_id: pluginID, status: "draft", saved_at: savedAt }, 201);
+}
+
+async function importDrafts(request: Request, env: Env): Promise<Response> {
+  const user = await requireUser(request, env.DB);
+  const value = await readJSON(request);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new HTTPError(400, "invalid_body", "Request body must be a JSON object.");
+  }
+  const plugins = (value as Record<string, unknown>).plugins;
+  if (!Array.isArray(plugins) || plugins.length === 0 || plugins.length > 100) {
+    throw new HTTPError(
+      400,
+      "invalid_plugins",
+      "plugins must be an array containing 1 through 100 items.",
+    );
+  }
+
+  const importedAt = new Date().toISOString();
+  const drafts = plugins.map((value, index) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      throw new HTTPError(
+        400,
+        "invalid_plugin",
+        `plugins[${index}] must be a JSON object.`,
+      );
+    }
+    const item = value as Record<string, unknown>;
+    const wrappedManifest = item.manifest;
+    const manifest = wrappedManifest === undefined ? item : wrappedManifest;
+    if (typeof manifest !== "object" || manifest === null || Array.isArray(manifest)) {
+      throw new HTTPError(
+        400,
+        "invalid_plugin",
+        `plugins[${index}].manifest must be a JSON object.`,
+      );
+    }
+
+    const sanitized = { ...(manifest as Record<string, unknown>) };
+    delete sanitized.id;
+    delete sanitized.author;
+    delete sanitized.update_time;
+    const pluginID = crypto.randomUUID();
+    try {
+      const parsed = parsePublishRequest(
+        {
+          ...(wrappedManifest === undefined ? {} : item),
+          manifest: {
+            ...sanitized,
+            id: pluginID,
+            author: user.nick,
+          },
+        },
+        pluginID,
+        importedAt,
+      );
+      return {
+        request: parsed.request,
+        metadata: parsed.metadata,
+        manifestJSON: JSON.stringify(parsed.request.manifest),
+      };
+    } catch (cause) {
+      if (cause instanceof HTTPError) {
+        throw new HTTPError(
+          cause.status,
+          cause.code,
+          `plugins[${index}]: ${cause.message}`,
+        );
+      }
+      throw cause;
+    }
+  });
+
+  const items = await importPluginDrafts(env.DB, user.id, drafts);
+  return json({ items, imported_count: items.length }, 201);
 }
 
 async function saveExistingDraft(

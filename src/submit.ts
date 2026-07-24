@@ -25,6 +25,7 @@ const template = String.raw`<!doctype html>
     button { cursor: pointer; }
     .shell { width: min(1080px,calc(100% - 40px)); margin: 0 auto; padding: 34px 0 64px; }
     header,.card-head,.actions,.user-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .actions { flex-wrap: wrap; }
     header { margin-bottom: 26px; }
     h1,h2,h3,p { margin: 0; }
     h1 { font-size: clamp(24px,3vw,32px); }
@@ -148,6 +149,9 @@ const template = String.raw`<!doctype html>
           <div><strong id="user-nick"></strong><p class="subtitle" id="user-email"></p></div>
           <div class="actions">
             <button class="button" id="logout" type="button">退出登录</button>
+            <button class="button" id="import-plugins" type="button">批量导入 JSON</button>
+            <input id="import-json-file" type="file" accept=".json,application/json" hidden>
+            <button class="button" id="submit-all-drafts" type="button" disabled>全部提交审核</button>
             <button class="button primary" id="new-plugin" type="button">新建插件</button>
           </div>
         </div>
@@ -246,6 +250,9 @@ const template = String.raw`<!doctype html>
     });
     $("refresh").addEventListener("click", loadSubmissions);
     $("new-plugin").addEventListener("click", newPlugin);
+    $("import-plugins").addEventListener("click", () => $("import-json-file").click());
+    $("import-json-file").addEventListener("change", importPlugins);
+    $("submit-all-drafts").addEventListener("click", submitAllDrafts);
     $("close-editor").addEventListener("click", closeEditor);
     $("cancel-editor").addEventListener("click", closeEditor);
     $("add-field").addEventListener("click", () => addCustomField("", ""));
@@ -313,9 +320,80 @@ const template = String.raw`<!doctype html>
         });
         if (!response.ok) throw await responseError(response);
         state.submissions = (await response.json()).items;
+        const draftCount = state.submissions.filter((item) => item.status === "draft").length;
+        $("submit-all-drafts").disabled = draftCount === 0;
+        $("submit-all-drafts").textContent = draftCount
+          ? "全部提交审核 (" + draftCount + ")"
+          : "全部提交审核";
         renderSubmissions();
       } catch (error) {
         showNotice("editor-notice", error.message, "error");
+      }
+    }
+
+    async function submitAllDrafts() {
+      const draftCount = state.submissions.filter((item) => item.status === "draft").length;
+      if (!draftCount || !confirm(
+        "确定将全部 " + draftCount + " 个草稿提交管理员审核？"
+      )) return;
+      const button = $("submit-all-drafts");
+      button.disabled = true;
+      showNotice("submission-notice", "正在提交全部草稿…", "");
+      try {
+        const response = await fetch("/api/v1/user/plugins/submit-drafts", {
+          method: "POST",
+          credentials: "same-origin"
+        });
+        if (!response.ok) throw await responseError(response);
+        const result = await response.json();
+        await loadSubmissions();
+        showNotice(
+          "submission-notice",
+          "已提交 " + result.submitted_count + " 个插件，正在等待管理员审核。",
+          "ok"
+        );
+      } catch (error) {
+        showNotice("submission-notice", error.message, "error");
+        button.disabled = false;
+      }
+    }
+
+    async function importPlugins(event) {
+      const input = event.currentTarget;
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const button = $("import-plugins");
+      button.disabled = true;
+      showNotice("submission-notice", "正在导入并校验 JSON…", "");
+      try {
+        const parsed = JSON.parse(await file.text());
+        const plugins = Array.isArray(parsed) ? parsed : parsed && parsed.plugins;
+        if (!Array.isArray(plugins) || plugins.length < 1 || plugins.length > 100) {
+          throw new Error("JSON 必须是包含 1–100 个插件的数组，或包含 plugins 数组的对象。");
+        }
+        const response = await fetch("/api/v1/user/plugins/import", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ plugins })
+        });
+        if (!response.ok) throw await responseError(response);
+        const result = await response.json();
+        await loadSubmissions();
+        showNotice(
+          "submission-notice",
+          "成功导入 " + result.imported_count + " 个插件，均已保存为草稿。",
+          "ok"
+        );
+      } catch (error) {
+        showNotice(
+          "submission-notice",
+          error instanceof SyntaxError ? "JSON 文件格式错误。" : error.message,
+          "error"
+        );
+      } finally {
+        input.value = "";
+        button.disabled = false;
       }
     }
 
@@ -567,7 +645,6 @@ const template = String.raw`<!doctype html>
         await loadSubmissions();
         closeEditor();
         showNotice("submission-notice", "提交成功，插件正在等待管理员审核。", "ok");
-        $("submission-notice").scrollIntoView({ behavior: "smooth", block: "center" });
       } catch (error) {
         showNotice("editor-notice", error.message, "error");
       } finally {

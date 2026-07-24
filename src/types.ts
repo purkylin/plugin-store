@@ -58,3 +58,14 @@ export interface PluginManifestMetadata {
   iconURL: string | null;
   version: string;
 }
+
+export interface UpdateCheckPlugin {
+  id: string;
+  version: string;
+}
+
+export interface UpdateCheckRequest {
+  platform: Platform;
+  app_version: string;
+  plugins: UpdateCheckPlugin[];
+}

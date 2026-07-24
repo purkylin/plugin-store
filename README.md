@@ -89,8 +89,29 @@ For a controlled production rollout, you can instead create D1 first with
 Public app endpoints:
 
 - `GET /api/v1/plugins` (`page`, `page_size`, `sort`, `order`, `type`, and `q`)
+- `POST /api/v1/plugins/check-updates` (up to 100 `{id, version}` items)
 - `GET /api/v1/plugins/{plugin_id}/manifest`
 - `POST /api/v1/plugins/{plugin_id}/install-events`
+
+Batch update check:
+
+```http
+POST /api/v1/plugins/check-updates
+Content-Type: application/json
+
+{
+  "platform": "ios",
+  "app_version": "1.4.0",
+  "plugins": [
+    { "id": "plugin-uuid", "version": "1.0.0" }
+  ]
+}
+```
+
+The response preserves the request order and reports `update_available`,
+`up_to_date`, `incompatible`, or `not_found` for every plugin. An
+`update_available` item includes the latest published manifest and its SHA-256.
+Draft, pending, rejected, and unpublished releases are never returned.
 
 Administrator endpoints:
 
@@ -110,10 +131,18 @@ Author accounts and submissions:
 - `POST /api/v1/user/submissions/{submission_id}/cancel`
 - `POST /api/v1/user/plugins` (server-generated UUID)
 - `POST /api/v1/user/plugins/draft`
+- `POST /api/v1/user/plugins/import` (batch-import 1–100 new drafts)
+- `POST /api/v1/user/plugins/submit-drafts` (submit all drafts for review)
 - `PUT /api/v1/user/plugins/{plugin_id}`
 - `PUT /api/v1/user/plugins/{plugin_id}/draft`
 - `DELETE /api/v1/user/plugins/{plugin_id}`
 - `POST /api/v1/user/plugins/{plugin_id}/unpublish`
+
+The author portal accepts a JSON array of manifests, or an object containing a
+`plugins` array. Batch imports are saved as drafts and are not submitted for
+review. Imported `id`, `author`, and `update_time` values are ignored; the
+server generates the ID and timestamp and uses the signed-in user's nick as the
+author.
 
 Management dashboard:
 

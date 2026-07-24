@@ -7,8 +7,9 @@ import type {
   Platform,
   PluginManifestMetadata,
   PublishRequest,
+  UpdateCheckRequest,
 } from "./types";
-import { isVersionAtLeast } from "./version";
+import { compareVersions, isVersionAtLeast } from "./version";
 
 interface ListOptions {
   platform: Platform;
@@ -31,6 +32,15 @@ interface PublishedPluginRow {
   manifest_json: string;
 }
 
+interface UpdateCheckRow extends PublishedPluginRow {
+  id: string;
+  manifest_sha256: string;
+  supports_ios: number;
+  supports_tvos: number;
+  minimum_ios_version: string | null;
+  minimum_tvos_version: string | null;
+}
+
 interface PluginDraftRow {
   plugin_id: string;
   user_id: string;
@@ -44,6 +54,18 @@ interface PluginDraftRow {
   saved_at: string;
   published_version: string | null;
   approved_version: string | null;
+}
+
+interface DraftSubmissionRow {
+  plugin_id: string;
+  manifest_json: string;
+  supports_ios: number;
+  supports_tvos: number;
+  minimum_ios_version: string | null;
+  minimum_tvos_version: string | null;
+  pending_submission_id: string | null;
+  latest_version: string | null;
+  latest_manifest_json: string | null;
 }
 
 export interface PluginSubmissionRow {
@@ -168,6 +190,81 @@ export async function getManifest(
     JOIN plugin_releases r ON r.id = p.published_release_id
     WHERE p.id = ?
   `).bind(pluginID).first<ManifestRow>();
+}
+
+export async function checkPluginUpdates(
+  db: D1Database,
+  request: UpdateCheckRequest,
+) {
+  const placeholders = request.plugins.map(() => "?").join(", ");
+  const rows = await db.prepare(`
+    SELECT p.id, r.version AS latest_version, r.manifest_json,
+           r.manifest_sha256, r.supports_ios, r.supports_tvos,
+           r.minimum_ios_version, r.minimum_tvos_version
+    FROM plugins p
+    JOIN plugin_releases r ON r.id = p.published_release_id
+    WHERE p.id IN (${placeholders})
+  `).bind(...request.plugins.map((plugin) => plugin.id)).all<UpdateCheckRow>();
+  const published = new Map(rows.results.map((row) => [row.id, row]));
+  let updateCount = 0;
+
+  const items = request.plugins.map((plugin) => {
+    const row = published.get(plugin.id);
+    if (row === undefined) {
+      return {
+        id: plugin.id,
+        current_version: plugin.version,
+        latest_version: null,
+        update_available: false,
+        status: "not_found" as const,
+        manifest: null,
+        manifest_sha256: null,
+      };
+    }
+
+    const supportsPlatform = request.platform === "ios"
+      ? row.supports_ios === 1
+      : row.supports_tvos === 1;
+    const minimumVersion = request.platform === "ios"
+      ? row.minimum_ios_version
+      : row.minimum_tvos_version;
+    if (!supportsPlatform || !isVersionAtLeast(request.app_version, minimumVersion)) {
+      return {
+        id: plugin.id,
+        current_version: plugin.version,
+        latest_version: row.latest_version,
+        update_available: false,
+        status: "incompatible" as const,
+        manifest: null,
+        manifest_sha256: null,
+      };
+    }
+
+    if (compareVersions(row.latest_version, plugin.version) > 0) {
+      updateCount += 1;
+      return {
+        id: plugin.id,
+        current_version: plugin.version,
+        latest_version: row.latest_version,
+        update_available: true,
+        status: "update_available" as const,
+        manifest: JSON.parse(row.manifest_json) as Record<string, unknown>,
+        manifest_sha256: row.manifest_sha256,
+      };
+    }
+
+    return {
+      id: plugin.id,
+      current_version: plugin.version,
+      latest_version: row.latest_version,
+      update_available: false,
+      status: "up_to_date" as const,
+      manifest: null,
+      manifest_sha256: row.manifest_sha256,
+    };
+  });
+
+  return { items, update_count: updateCount };
 }
 
 export async function pluginExists(db: D1Database, pluginID: string): Promise<boolean> {
@@ -403,6 +500,148 @@ export async function savePluginDraft(
     savedAt,
   ).run();
   return savedAt;
+}
+
+export async function importPluginDrafts(
+  db: D1Database,
+  userID: string,
+  drafts: Array<{
+    request: PublishRequest;
+    metadata: PluginManifestMetadata;
+    manifestJSON: string;
+  }>,
+): Promise<Array<{ plugin_id: string; status: "draft"; saved_at: string }>> {
+  const savedAt = new Date().toISOString();
+  const statements: D1PreparedStatement[] = [];
+  for (const draft of drafts) {
+    const platforms = new Set(draft.request.platforms ?? ["ios", "tvos"]);
+    statements.push(
+      db.prepare(`
+        INSERT INTO plugin_owners (plugin_id, user_id, created_at)
+        VALUES (?, ?, ?)
+      `).bind(draft.metadata.id, userID, savedAt),
+      db.prepare(`
+        INSERT INTO plugin_drafts (
+          plugin_id, user_id, manifest_json, supports_ios, supports_tvos,
+          minimum_ios_version, minimum_tvos_version, saved_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        draft.metadata.id,
+        userID,
+        draft.manifestJSON,
+        platforms.has("ios") ? 1 : 0,
+        platforms.has("tvos") ? 1 : 0,
+        draft.request.minimum_ios_version ?? null,
+        draft.request.minimum_tvos_version ?? null,
+        savedAt,
+      ),
+    );
+  }
+  await db.batch(statements);
+  return drafts.map((draft) => ({
+    plugin_id: draft.metadata.id,
+    status: "draft",
+    saved_at: savedAt,
+  }));
+}
+
+export async function submitAllPluginDrafts(
+  db: D1Database,
+  userID: string,
+): Promise<Array<{
+  submission_id: string;
+  plugin_id: string;
+  status: "pending";
+}>> {
+  const result = await db.prepare(`
+    SELECT d.plugin_id, d.manifest_json, d.supports_ios, d.supports_tvos,
+           d.minimum_ios_version, d.minimum_tvos_version,
+           pending.id AS pending_submission_id,
+           latest.version AS latest_version,
+           latest.manifest_json AS latest_manifest_json
+    FROM plugin_drafts d
+    LEFT JOIN plugin_submissions pending
+      ON pending.plugin_id = d.plugin_id AND pending.status = 'pending'
+    LEFT JOIN plugin_releases latest ON latest.id = (
+      SELECT release.id
+      FROM plugin_releases release
+      WHERE release.plugin_id = d.plugin_id
+      ORDER BY release.published_at DESC, release.id DESC
+      LIMIT 1
+    )
+    WHERE d.user_id = ?
+    ORDER BY d.saved_at ASC, d.plugin_id ASC
+  `).bind(userID).all<DraftSubmissionRow>();
+  if (result.results.length === 0) {
+    return [];
+  }
+
+  const submittedAt = new Date().toISOString();
+  const statements: D1PreparedStatement[] = [];
+  const items = result.results.map((draft) => {
+    if (draft.pending_submission_id !== null) {
+      throw new HTTPError(
+        409,
+        "review_already_pending",
+        `Plugin ${draft.plugin_id} already has a submission waiting for review.`,
+      );
+    }
+    const manifest = JSON.parse(draft.manifest_json) as Record<string, unknown>;
+    const version = typeof manifest.version === "string" ? manifest.version : "";
+    if (draft.latest_version !== null && draft.latest_manifest_json !== null) {
+      const latestManifest = JSON.parse(
+        draft.latest_manifest_json,
+      ) as Record<string, unknown>;
+      if (manifest.type !== latestManifest.type || manifest.author !== latestManifest.author) {
+        throw new HTTPError(
+          409,
+          "immutable_field",
+          `Plugin ${draft.plugin_id} cannot change its type or author.`,
+        );
+      }
+      if (compareVersions(version, draft.latest_version) <= 0) {
+        throw new HTTPError(
+          409,
+          "version_not_incremented",
+          `Plugin ${draft.plugin_id} version must be greater than ${draft.latest_version}.`,
+        );
+      }
+    }
+
+    const submissionID = crypto.randomUUID();
+    const manifestJSON = JSON.stringify({ ...manifest, update_time: submittedAt });
+    statements.push(
+      db.prepare(`
+        INSERT INTO plugin_submissions (
+          id, plugin_id, user_id, version, manifest_json,
+          supports_ios, supports_tvos, minimum_ios_version, minimum_tvos_version,
+          status, rejection_reason, submitted_at, reviewed_at, cancelled_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?, NULL, NULL)
+      `).bind(
+        submissionID,
+        draft.plugin_id,
+        userID,
+        version,
+        manifestJSON,
+        draft.supports_ios,
+        draft.supports_tvos,
+        draft.minimum_ios_version,
+        draft.minimum_tvos_version,
+        submittedAt,
+      ),
+      db.prepare(
+        "DELETE FROM plugin_drafts WHERE plugin_id = ? AND user_id = ?",
+      ).bind(draft.plugin_id, userID),
+    );
+    return {
+      submission_id: submissionID,
+      plugin_id: draft.plugin_id,
+      status: "pending" as const,
+    };
+  });
+
+  await db.batch(statements);
+  return items;
 }
 
 export async function deletePluginDraft(

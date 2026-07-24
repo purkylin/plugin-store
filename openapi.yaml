@@ -121,6 +121,50 @@ paths:
           $ref: "#/components/responses/Error"
         "401":
           $ref: "#/components/responses/Error"
+  /user/plugins/import:
+    post:
+      operationId: importPluginDrafts
+      summary: Import 1–100 new plugins as drafts
+      description: Imported id, author, and update_time fields are ignored and replaced by the server.
+      security:
+        - userSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PluginImportRequest"
+      responses:
+        "201":
+          description: Every plugin was validated and imported as a draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PluginImportResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "415":
+          $ref: "#/components/responses/Error"
+  /user/plugins/submit-drafts:
+    post:
+      operationId: submitAllPluginDrafts
+      summary: Submit all of the current user's drafts for administrator review
+      description: Every draft is validated before the batch is submitted; validation failure leaves all drafts unchanged.
+      security:
+        - userSession: []
+      responses:
+        "202":
+          description: All drafts were submitted for review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DraftSubmissionResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /user/plugins/{plugin_id}:
     put:
       operationId: submitPluginUpdateForReview
@@ -260,6 +304,27 @@ paths:
               schema:
                 $ref: "#/components/schemas/PluginPage"
         "400":
+          $ref: "#/components/responses/Error"
+  /plugins/check-updates:
+    post:
+      operationId: checkPluginUpdates
+      summary: Check multiple installed plugins for compatible published updates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCheckRequest"
+      responses:
+        "200":
+          description: One result for every requested plugin, in request order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateCheckResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "415":
           $ref: "#/components/responses/Error"
   /plugins/{plugin_id}/manifest:
     get:
@@ -531,6 +596,69 @@ components:
         manifest_sha256:
           type: string
           pattern: "^[a-f0-9]{64}$"
+    UpdateCheckRequest:
+      type: object
+      required: [platform, app_version, plugins]
+      properties:
+        platform:
+          type: string
+          enum: [ios, tvos]
+        app_version:
+          type: string
+          example: 1.4.0
+        plugins:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: object
+            required: [id, version]
+            properties:
+              id:
+                type: string
+              version:
+                type: string
+    UpdateCheckResponse:
+      type: object
+      required: [items, update_count]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpdateCheckResult"
+        update_count:
+          type: integer
+          minimum: 0
+    UpdateCheckResult:
+      type: object
+      required:
+        - id
+        - current_version
+        - latest_version
+        - update_available
+        - status
+        - manifest
+        - manifest_sha256
+      properties:
+        id:
+          type: string
+        current_version:
+          type: string
+        latest_version:
+          type: [string, "null"]
+        update_available:
+          type: boolean
+        status:
+          type: string
+          enum: [update_available, up_to_date, incompatible, not_found]
+        manifest:
+          type: [object, "null"]
+          description: Present only when status is update_available
+          additionalProperties: true
+        manifest_sha256:
+          type: [string, "null"]
+          pattern: "^[a-f0-9]{64}$"
     AdminPluginPage:
       type: object
       required: [items, next_cursor]
@@ -616,6 +744,92 @@ components:
           type: [string, "null"]
         minimum_tvos_version:
           type: [string, "null"]
+    PluginImportRequest:
+      type: object
+      required: [plugins]
+      properties:
+        plugins:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            oneOf:
+              - $ref: "#/components/schemas/ImportManifest"
+              - type: object
+                required: [manifest]
+                properties:
+                  manifest:
+                    $ref: "#/components/schemas/ImportManifest"
+                  platforms:
+                    type: array
+                    minItems: 1
+                    uniqueItems: true
+                    items:
+                      type: string
+                      enum: [ios, tvos]
+                  minimum_ios_version:
+                    type: [string, "null"]
+                  minimum_tvos_version:
+                    type: [string, "null"]
+    ImportManifest:
+      type: object
+      required: [type, name, desc, version]
+      description: id, author, and update_time may be present but are always ignored.
+      properties:
+        type:
+          type: string
+        name:
+          type: string
+        desc:
+          type: string
+        version:
+          type: string
+      additionalProperties: true
+    PluginImportResponse:
+      type: object
+      required: [items, imported_count]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [plugin_id, status, saved_at]
+            properties:
+              plugin_id:
+                type: string
+                format: uuid
+              status:
+                type: string
+                const: draft
+              saved_at:
+                type: string
+                format: date-time
+        imported_count:
+          type: integer
+          minimum: 1
+          maximum: 100
+    DraftSubmissionResponse:
+      type: object
+      required: [items, submitted_count]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [submission_id, plugin_id, status]
+            properties:
+              submission_id:
+                type: string
+                format: uuid
+              plugin_id:
+                type: string
+                format: uuid
+              status:
+                type: string
+                const: pending
+        submitted_count:
+          type: integer
+          minimum: 0
     Error:
       type: object
       required: [code, message]
