@@ -321,10 +321,11 @@ const template = String.raw`<!doctype html>
         if (!response.ok) throw await responseError(response);
         state.submissions = (await response.json()).items;
         const draftCount = state.submissions.filter((item) => item.status === "draft").length;
+        const action = state.user.whitelisted ? "全部发布" : "全部提交审核";
         $("submit-all-drafts").disabled = draftCount === 0;
         $("submit-all-drafts").textContent = draftCount
-          ? "全部提交审核 (" + draftCount + ")"
-          : "全部提交审核";
+          ? action + " (" + draftCount + ")"
+          : action;
         renderSubmissions();
       } catch (error) {
         showNotice("editor-notice", error.message, "error");
@@ -334,7 +335,9 @@ const template = String.raw`<!doctype html>
     async function submitAllDrafts() {
       const draftCount = state.submissions.filter((item) => item.status === "draft").length;
       if (!draftCount || !confirm(
-        "确定将全部 " + draftCount + " 个草稿提交管理员审核？"
+        state.user.whitelisted
+          ? "确定直接发布全部 " + draftCount + " 个草稿？"
+          : "确定将全部 " + draftCount + " 个草稿提交管理员审核？"
       )) return;
       const button = $("submit-all-drafts");
       button.disabled = true;
@@ -349,7 +352,9 @@ const template = String.raw`<!doctype html>
         await loadSubmissions();
         showNotice(
           "submission-notice",
-          "已提交 " + result.submitted_count + " 个插件，正在等待管理员审核。",
+          result.published_count !== undefined
+            ? "已直接上架 " + result.published_count + " 个插件。"
+            : "已提交 " + result.submitted_count + " 个插件，正在等待管理员审核。",
           "ok"
         );
       } catch (error) {
@@ -642,9 +647,16 @@ const template = String.raw`<!doctype html>
           }
         );
         if (!response.ok) throw await responseError(response);
+        const result = await response.json();
         await loadSubmissions();
         closeEditor();
-        showNotice("submission-notice", "提交成功，插件正在等待管理员审核。", "ok");
+        showNotice(
+          "submission-notice",
+          result.status === "accepted"
+            ? "提交成功，插件已直接上架。"
+            : "提交成功，插件正在等待管理员审核。",
+          "ok"
+        );
       } catch (error) {
         showNotice("editor-notice", error.message, "error");
       } finally {

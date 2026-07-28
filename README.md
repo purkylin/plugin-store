@@ -12,6 +12,7 @@ Cloudflare Worker + D1 implementation of the Hawk Plugin Store API.
 - Responsive management dashboard with structured manifest editing.
 - Email/password author accounts with secure HttpOnly session cookies and globally unique email and nick.
 - User plugin submissions with administrator accept/reject review.
+- Registered-user statistics, contribution Top 5, and an administrator-managed review-free whitelist.
 - D1 migrations and Workers-runtime integration tests.
 
 The Hawk app should use the deployed Worker URL with `/api/v1` appended, for
@@ -117,6 +118,9 @@ Administrator endpoints:
 
 - `GET /api/v1/admin/plugins`
 - `POST /api/v1/admin/plugins/{plugin_id}/unpublish`
+- `GET /api/v1/admin/users/stats`
+- `GET /api/v1/admin/users` (`q` searches email or nick)
+- `PUT /api/v1/admin/users/{user_id}/whitelist`
 - `GET /api/v1/admin/reviews`
 - `POST /api/v1/admin/reviews/{submission_id}/accept`
 - `POST /api/v1/admin/reviews/{submission_id}/reject`
@@ -143,6 +147,10 @@ The author portal accepts a JSON array of manifests, or an object containing a
 review. Imported `id`, `author`, and `update_time` values are ignored; the
 server generates the ID and timestamp and uses the signed-in user's nick as the
 author.
+
+Whitelisted users still create accepted submission records, but their new
+plugins, updates, and batch-submitted drafts bypass the pending review queue and
+are published immediately.
 
 Management dashboard:
 

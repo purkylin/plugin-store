@@ -9,12 +9,17 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   nick: string;
+  whitelisted: boolean;
 }
 
-interface UserRow extends AuthenticatedUser {
+interface UserRow {
+  id: string;
+  email: string;
+  nick: string;
   password_salt: string;
   password_hash: string;
   password_iterations: number;
+  is_whitelisted: number;
 }
 
 export async function registerUser(
@@ -54,8 +59,8 @@ export async function registerUser(
       db.prepare(`
         INSERT INTO users (
           id, email, nick, password_salt, password_hash,
-          password_iterations, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          password_iterations, created_at, is_whitelisted
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0)
       `).bind(id, email, nick, salt, passwordHash, passwordIterations, createdAt),
       db.prepare(`
         INSERT INTO user_sessions (token_hash, user_id, created_at, expires_at)
@@ -66,7 +71,7 @@ export async function registerUser(
     throw new HTTPError(409, "user_already_exists", "email or nick is already registered.");
   }
   return {
-    user: { id, email, nick },
+    user: { id, email, nick, whitelisted: false },
     token: session.token,
     expires_at: session.expiresAt,
   };
@@ -80,7 +85,8 @@ export async function loginUser(
   const email = parseEmail(body.email);
   const password = requireString(body.password, "password");
   const user = await db.prepare(`
-    SELECT id, email, nick, password_salt, password_hash, password_iterations
+    SELECT id, email, nick, password_salt, password_hash,
+           password_iterations, is_whitelisted
     FROM users
     WHERE email = ? COLLATE NOCASE
   `).bind(email).first<UserRow>();
@@ -102,7 +108,7 @@ export async function loginUser(
     VALUES (?, ?, ?, ?)
   `).bind(session.tokenHash, user.id, createdAt, session.expiresAt).run();
   return {
-    user: { id: user.id, email: user.email, nick: user.nick },
+    user: toAuthenticatedUser(user),
     token: session.token,
     expires_at: session.expiresAt,
   };
@@ -118,15 +124,20 @@ export async function requireUser(
   }
   const tokenHash = await sha256(token);
   const user = await db.prepare(`
-    SELECT u.id, u.email, u.nick
+    SELECT u.id, u.email, u.nick, u.is_whitelisted
     FROM user_sessions s
     JOIN users u ON u.id = s.user_id
     WHERE s.token_hash = ? AND s.expires_at > ?
-  `).bind(tokenHash, new Date().toISOString()).first<AuthenticatedUser>();
+  `).bind(tokenHash, new Date().toISOString()).first<{
+    id: string;
+    email: string;
+    nick: string;
+    is_whitelisted: number;
+  }>();
   if (user === null) {
     throw new HTTPError(401, "unauthorized", "The user session is invalid or expired.");
   }
-  return user;
+  return toAuthenticatedUser(user);
 }
 
 export async function logoutUser(request: Request, db: D1Database): Promise<void> {
@@ -299,4 +310,15 @@ function decodeBase64URL(value: string): Uint8Array {
   const base64 = value.replaceAll("-", "+").replaceAll("_", "/");
   const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
   return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+}
+
+function toAuthenticatedUser(
+  user: { id: string; email: string; nick: string; is_whitelisted: number },
+): AuthenticatedUser {
+  return {
+    id: user.id,
+    email: user.email,
+    nick: user.nick,
+    whitelisted: user.is_whitelisted === 1,
+  };
 }

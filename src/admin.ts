@@ -41,7 +41,7 @@ const template = String.raw`<!doctype html>
       color: #061b18; font-size: 22px; font-weight: 900;
       background: linear-gradient(135deg, #8af0dc, #42b8ff); box-shadow: 0 12px 36px rgba(74, 205, 188, .24);
     }
-    h1, h2, p { margin: 0; }
+    h1, h2, h3, p { margin: 0; }
     h1 { font-size: clamp(22px, 3vw, 30px); letter-spacing: -.03em; }
     h2 { font-size: 17px; letter-spacing: -.01em; }
     .subtitle { color: var(--muted); font-size: 13px; margin-top: 2px; }
@@ -54,6 +54,18 @@ const template = String.raw`<!doctype html>
       box-shadow: var(--shadow); backdrop-filter: blur(18px); overflow: hidden;
     }
     .review-card { margin-bottom: 20px; }
+    .user-card { margin-bottom: 20px; }
+    .metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 180px)); gap: 12px; padding: 20px; }
+    .metric { padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(2, 10, 19, .3); }
+    .metric strong { display: block; font-size: 26px; line-height: 1.2; }
+    .metric span { color: var(--muted); font-size: 12px; }
+    .user-sections { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--line); }
+    .user-section + .user-section { border-left: 1px solid var(--line); }
+    .user-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 15px 20px; border-bottom: 1px solid var(--line); }
+    .user-section-head h3 { font-size: 14px; }
+    .user-section table { min-width: 520px; }
+    .user-search { display: flex; gap: 8px; }
+    .user-search input { width: min(240px, 32vw); padding: 8px 10px; }
     .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--line); }
     .actions { display: flex; align-items: center; gap: 8px; }
     .button {
@@ -129,7 +141,7 @@ const template = String.raw`<!doctype html>
     .notice { min-height: 22px; margin-top: 13px; font-size: 13px; color: var(--muted); }
     .notice.ok { color: var(--accent); }
     .notice.error { color: var(--danger); }
-    .review-card > .notice { margin: 0; padding: 0 20px 14px; }
+    .review-card > .notice, .user-card > .notice { margin: 0; padding: 0 20px 14px; }
     dialog {
       width: min(430px, calc(100% - 32px)); color: var(--text); border: 1px solid var(--line);
       border-radius: 20px; background: #0b1b2d; box-shadow: var(--shadow); padding: 0;
@@ -146,6 +158,8 @@ const template = String.raw`<!doctype html>
       .shell { width: min(100% - 24px, 720px); padding-top: 20px; }
       header { align-items: flex-start; }
       .status { padding-top: 8px; }
+      .user-sections { grid-template-columns: 1fr; }
+      .user-section + .user-section { border-left: 0; border-top: 1px solid var(--line); }
     }
     @media (max-width: 520px) {
       .row { grid-template-columns: 1fr; gap: 0; }
@@ -167,6 +181,45 @@ const template = String.raw`<!doctype html>
       </div>
       <div class="status"><span class="dot"></span><span id="connection">等待验证</span></div>
     </header>
+
+    <section class="card user-card" aria-labelledby="users-title">
+      <div class="card-head">
+        <div><h2 id="users-title">用户统计</h2><p class="subtitle">注册用户、插件贡献排行与免审白名单</p></div>
+      </div>
+      <div class="metrics">
+        <div class="metric"><strong id="total-users">—</strong><span>注册用户</span></div>
+        <div class="metric"><strong id="whitelisted-users">—</strong><span>白名单用户</span></div>
+      </div>
+      <div class="user-sections">
+        <section class="user-section">
+          <div class="user-section-head"><h3>贡献用户 Top 5</h3><span class="subtitle">按审核通过的插件数</span></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>用户</th><th>贡献插件</th><th>白名单</th></tr></thead>
+              <tbody id="contributor-rows"></tbody>
+            </table>
+            <div class="empty" id="contributors-empty" hidden>还没有用户贡献插件。</div>
+          </div>
+        </section>
+        <section class="user-section">
+          <div class="user-section-head">
+            <h3>白名单管理</h3>
+            <div class="user-search">
+              <input id="user-search" placeholder="搜索 Email 或昵称">
+              <button class="button" id="search-users" type="button">搜索</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>用户</th><th>贡献插件</th><th></th></tr></thead>
+              <tbody id="user-rows"></tbody>
+            </table>
+            <div class="empty" id="users-empty" hidden>没有匹配的用户。</div>
+          </div>
+        </section>
+      </div>
+      <p class="notice" id="user-notice" role="status"></p>
+    </section>
 
     <section class="card review-card" aria-labelledby="reviews-title">
       <div class="card-head">
@@ -313,7 +366,8 @@ const template = String.raw`<!doctype html>
     const state = {
       token: "", cursor: null, nextCursor: null, history: [], page: 1, items: [],
       editorMode: "form", editorManifest: {}, editingID: null, originalVersion: null,
-      pendingDelete: null, reviews: [], pendingReview: null, reviewAction: null
+      pendingDelete: null, reviews: [], pendingReview: null, reviewAction: null,
+      users: [], contributors: []
     };
     const $ = (id) => document.getElementById(id);
     const knownFields = new Set([
@@ -340,6 +394,13 @@ const template = String.raw`<!doctype html>
       $("login-dialog").showModal();
     });
     $("refresh").addEventListener("click", () => loadPlugins());
+    $("search-users").addEventListener("click", searchUsers);
+    $("user-search").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        searchUsers();
+      }
+    });
     $("close-editor").addEventListener("click", closeEditor);
     $("form-mode").addEventListener("click", () => setEditorMode("form"));
     $("json-mode").addEventListener("click", () => setEditorMode("json"));
@@ -403,7 +464,7 @@ const template = String.raw`<!doctype html>
         state.items = page.items;
         state.nextCursor = page.next_cursor;
         renderRows();
-        await loadReviews();
+        await Promise.all([loadReviews(), loadUsers()]);
         $("connection").textContent = "已连接";
         $("login-error").textContent = "";
         return true;
@@ -450,6 +511,107 @@ const template = String.raw`<!doctype html>
       $("page-label").textContent = "第 " + state.page + " 页";
       $("previous").disabled = state.history.length === 0;
       $("next").disabled = !state.nextCursor;
+    }
+
+    async function loadUsers() {
+      const url = new URL("/api/v1/admin/users", location.origin);
+      const search = $("user-search").value.trim();
+      if (search) url.searchParams.set("q", search);
+      const [statsResponse, usersResponse] = await Promise.all([
+        api("/api/v1/admin/users/stats"),
+        api(url)
+      ]);
+      if (!statsResponse.ok) throw await responseError(statsResponse);
+      if (!usersResponse.ok) throw await responseError(usersResponse);
+      const stats = await statsResponse.json();
+      state.contributors = stats.top_contributors;
+      state.users = (await usersResponse.json()).items;
+      $("total-users").textContent = new Intl.NumberFormat().format(stats.total_users);
+      $("whitelisted-users").textContent =
+        new Intl.NumberFormat().format(stats.whitelisted_users);
+      renderUsers("contributor-rows", state.contributors, false);
+      renderUsers("user-rows", state.users, true);
+      $("contributors-empty").hidden = state.contributors.length !== 0;
+      $("users-empty").hidden = state.users.length !== 0;
+    }
+
+    async function searchUsers() {
+      try {
+        await loadUsers();
+        $("user-notice").textContent = "";
+      } catch (error) {
+        $("user-notice").textContent = error.message;
+        $("user-notice").className = "notice error";
+      }
+    }
+
+    function renderUsers(targetID, users, actions) {
+      const tbody = $(targetID);
+      tbody.replaceChildren();
+      for (const user of users) {
+        const row = document.createElement("tr");
+        row.append(cell(userIdentity(user)));
+        row.append(cell(new Intl.NumberFormat().format(user.contribution_count)));
+        if (actions) {
+          const action = document.createElement("td");
+          const button = document.createElement("button");
+          button.className = user.whitelisted ? "button danger" : "button";
+          button.type = "button";
+          button.textContent = user.whitelisted ? "移出白名单" : "加入白名单";
+          button.addEventListener("click", () => toggleWhitelist(user, button));
+          action.append(button);
+          row.append(action);
+        } else {
+          const status = document.createElement("span");
+          status.className = "badge";
+          status.textContent = user.whitelisted ? "是" : "否";
+          row.append(cell(status));
+        }
+        tbody.append(row);
+      }
+    }
+
+    function userIdentity(user) {
+      const wrap = document.createElement("div");
+      const nick = document.createElement("span");
+      nick.className = "plugin-name";
+      nick.textContent = user.nick;
+      const email = document.createElement("span");
+      email.className = "plugin-id";
+      email.textContent = user.email;
+      wrap.append(nick, email);
+      return wrap;
+    }
+
+    async function toggleWhitelist(user, button) {
+      const enabled = !user.whitelisted;
+      if (!confirm(
+        enabled
+          ? "将 " + user.nick + " 加入白名单？其投稿将无需审核直接上架。"
+          : "将 " + user.nick + " 移出白名单？之后的投稿将恢复人工审核。"
+      )) return;
+      button.disabled = true;
+      $("user-notice").textContent = "";
+      try {
+        const response = await api(
+          "/api/v1/admin/users/" + encodeURIComponent(user.id) + "/whitelist",
+          {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ enabled })
+          }
+        );
+        if (!response.ok) throw await responseError(response);
+        $("user-notice").textContent = enabled
+          ? user.nick + " 已加入白名单。"
+          : user.nick + " 已移出白名单。";
+        $("user-notice").className = "notice ok";
+        await loadUsers();
+      } catch (error) {
+        $("user-notice").textContent = error.message;
+        $("user-notice").className = "notice error";
+        button.disabled = false;
+      }
     }
 
     async function loadReviews() {

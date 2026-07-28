@@ -68,6 +68,15 @@ interface DraftSubmissionRow {
   latest_manifest_json: string | null;
 }
 
+interface AdminUserRow {
+  id: string;
+  email: string;
+  nick: string;
+  created_at: string;
+  is_whitelisted: number;
+  contribution_count: number;
+}
+
 export interface PluginSubmissionRow {
   id: string;
   plugin_id: string;
@@ -178,6 +187,61 @@ export async function listAdminPlugins(
       ? encodeCursor({ updatedAt: last.updated_at, id: last.id })
       : null,
   };
+}
+
+export async function getAdminUserStats(db: D1Database) {
+  const counts = await db.prepare(`
+    SELECT COUNT(*) AS total_users,
+           SUM(CASE WHEN is_whitelisted = 1 THEN 1 ELSE 0 END) AS whitelisted_users
+    FROM users
+  `).first<{ total_users: number; whitelisted_users: number | null }>();
+  const contributors = await db.prepare(`
+    ${adminUserSelect()}
+    WHERE EXISTS (
+      SELECT 1
+      FROM plugin_submissions accepted
+      WHERE accepted.user_id = u.id AND accepted.status = 'accepted'
+    )
+    ORDER BY contribution_count DESC, u.created_at ASC, u.id ASC
+    LIMIT 5
+  `).all<AdminUserRow>();
+  return {
+    total_users: counts?.total_users ?? 0,
+    whitelisted_users: counts?.whitelisted_users ?? 0,
+    top_contributors: contributors.results.map(toAdminUser),
+  };
+}
+
+export async function listAdminUsers(
+  db: D1Database,
+  search: string | null,
+) {
+  const filter = search === null
+    ? ""
+    : `WHERE u.email LIKE ? ESCAPE '\\' COLLATE NOCASE
+       OR u.nick LIKE ? ESCAPE '\\' COLLATE NOCASE`;
+  const pattern = search === null ? [] : [`%${escapeLike(search)}%`, `%${escapeLike(search)}%`];
+  const result = await db.prepare(`
+    ${adminUserSelect()}
+    ${filter}
+    ORDER BY u.is_whitelisted DESC, contribution_count DESC, u.created_at DESC
+    LIMIT 100
+  `).bind(...pattern).all<AdminUserRow>();
+  return { items: result.results.map(toAdminUser) };
+}
+
+export async function setUserWhitelist(
+  db: D1Database,
+  userID: string,
+  enabled: boolean,
+) {
+  const result = await db.prepare(
+    "UPDATE users SET is_whitelisted = ? WHERE id = ?",
+  ).bind(enabled ? 1 : 0, userID).run();
+  if ((result.meta.changes ?? 0) === 0) {
+    throw new HTTPError(404, "user_not_found", "User not found.");
+  }
+  return { id: userID, whitelisted: enabled };
 }
 
 export async function getManifest(
@@ -993,6 +1057,29 @@ function toSubmissionItem(row: PluginSubmissionRow) {
     cancelled_at: row.cancelled_at,
     published_version: row.published_version,
     approved_version: row.approved_version,
+  };
+}
+
+function adminUserSelect(): string {
+  return `
+    SELECT u.id, u.email, u.nick, u.created_at, u.is_whitelisted,
+           (
+             SELECT COUNT(DISTINCT submission.plugin_id)
+             FROM plugin_submissions submission
+             WHERE submission.user_id = u.id AND submission.status = 'accepted'
+           ) AS contribution_count
+    FROM users u
+  `;
+}
+
+function toAdminUser(row: AdminUserRow) {
+  return {
+    id: row.id,
+    email: row.email,
+    nick: row.nick,
+    created_at: row.created_at,
+    whitelisted: row.is_whitelisted === 1,
+    contribution_count: row.contribution_count,
   };
 }
 

@@ -17,11 +17,13 @@ import {
   deletePluginDraft,
   deleteOwnedPlugin,
   decodeCursor,
+  getAdminUserStats,
   getLatestPluginRelease,
   getManifest,
   getPendingSubmission,
   importPluginDrafts,
   listAdminPlugins,
+  listAdminUsers,
   listPendingSubmissions,
   listPlugins,
   listUserSubmissions,
@@ -30,6 +32,7 @@ import {
   rejectSubmission,
   requirePluginOwnership,
   savePluginDraft,
+  setUserWhitelist,
   submitAllPluginDrafts,
   unpublishOwnedPlugin,
   unpublishPlugin,
@@ -142,7 +145,28 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method === "POST" && apiPath === "/v1/user/plugins/submit-drafts") {
     const user = await requireUser(request, env.DB);
     const items = await submitAllPluginDrafts(env.DB, user.id);
-    return json({ items, submitted_count: items.length }, 202);
+    if (!user.whitelisted) {
+      return json({ items, submitted_count: items.length }, 202);
+    }
+    const published = [];
+    for (const item of items) {
+      const release = await publishPendingSubmission(env, item.submission_id);
+      published.push({ ...item, ...release, status: "accepted" });
+    }
+    return json({
+      items: published,
+      submitted_count: items.length,
+      published_count: published.length,
+    }, 201);
+  }
+  if (request.method === "GET" && apiPath === "/v1/admin/users/stats") {
+    requireAdmin(request, env);
+    return json(await getAdminUserStats(env.DB));
+  }
+  if (request.method === "GET" && apiPath === "/v1/admin/users") {
+    requireAdmin(request, env);
+    const search = parseOptionalQuery(url.searchParams.get("q"), "q");
+    return json(await listAdminUsers(env.DB, search));
   }
   if (request.method === "GET" && apiPath === "/v1/admin/reviews") {
     requireAdmin(request, env);
@@ -169,6 +193,19 @@ async function route(request: Request, env: Env): Promise<Response> {
     if (request.method === "POST" && segments[3] === "install-events") {
       return installEvent(request, pluginID, env);
     }
+  }
+  if (
+    request.method === "PUT"
+    && segments.length === 5
+    && segments[0] === "v1"
+    && segments[1] === "admin"
+    && segments[2] === "users"
+    && segments[4] === "whitelist"
+  ) {
+    requireAdmin(request, env);
+    const userID = decodeURIComponent(segments[3] ?? "");
+    const enabled = parseWhitelistRequest(await readJSON(request));
+    return json(await setUserWhitelist(env.DB, userID, enabled));
   }
   if (
     request.method === "POST"
@@ -491,7 +528,7 @@ async function saveExistingDraft(
 
 async function finishPluginSubmission(
   env: Env,
-  user: { id: string; nick: string },
+  user: { id: string; nick: string; whitelisted: boolean },
   parsed: ReturnType<typeof parsePublishRequest>,
   pluginID: string,
 ): Promise<Response> {
@@ -510,6 +547,23 @@ async function finishPluginSubmission(
     JSON.stringify(parsed.request.manifest),
   );
   await deletePluginDraft(env.DB, pluginID, user.id);
+  if (user.whitelisted) {
+    const manifestJSON = JSON.stringify(parsed.request.manifest);
+    await acceptPluginSubmission(
+      env.DB,
+      submissionID,
+      parsed.request,
+      parsed.metadata,
+      manifestJSON,
+      await sha256(manifestJSON),
+    );
+    return json({
+      submission_id: submissionID,
+      plugin_id: pluginID,
+      version: parsed.metadata.version,
+      status: "accepted",
+    }, 201);
+  }
   return json({ submission_id: submissionID, plugin_id: pluginID, status: "pending" }, 202);
 }
 
@@ -564,9 +618,21 @@ async function reviewSubmission(
   if (action !== "accept") {
     return error("not_found", "Review action not found.", 404);
   }
+  const published = await publishPendingSubmission(env, submissionID);
+  return json({
+    id: submissionID,
+    status: "accepted",
+    ...published,
+  });
+}
+
+async function publishPendingSubmission(
+  env: Env,
+  submissionID: string,
+): Promise<{ plugin_id: string; version: string }> {
   const submission = await getPendingSubmission(env.DB, submissionID);
   if (submission === null) {
-    return error("submission_not_found", "Pending submission not found.", 404);
+    throw new HTTPError(404, "submission_not_found", "Pending submission not found.");
   }
   const parsed = parsePublishRequest({
     manifest: JSON.parse(submission.manifest_json),
@@ -593,12 +659,10 @@ async function reviewSubmission(
     manifestJSON,
     checksum,
   );
-  return json({
-    id: submissionID,
-    status: "accepted",
+  return {
     plugin_id: submission.plugin_id,
     version: parsed.metadata.version,
-  });
+  };
 }
 
 async function unpublish(request: Request, pluginID: string, env: Env): Promise<Response> {
@@ -645,6 +709,17 @@ function parseReviewReason(value: unknown): string {
     throw new HTTPError(400, "invalid_reason", "reason must be 2-500 characters.");
   }
   return reason.trim();
+}
+
+function parseWhitelistRequest(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new HTTPError(400, "invalid_body", "Request body must be a JSON object.");
+  }
+  const enabled = (value as Record<string, unknown>).enabled;
+  if (typeof enabled !== "boolean") {
+    throw new HTTPError(400, "invalid_field", "enabled must be a boolean.");
+  }
+  return enabled;
 }
 
 function requireAdmin(request: Request, env: Env): void {

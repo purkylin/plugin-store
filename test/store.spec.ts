@@ -223,6 +223,154 @@ describe("Plugin Store API", () => {
     expect(response.status).toBe(404);
   });
 
+  it("reports user contributions and lets whitelisted users publish without review", async () => {
+    const registration = await authRequest("/api/v1/auth/register", {
+      email: "trusted-author@example.com",
+      nick: "TrustedAuthor",
+      password: "trusted-author-password",
+      password_confirmation: "trusted-author-password",
+    });
+    expect(registration.status).toBe(201);
+    const cookie = sessionCookie(registration);
+    const account = await registration.json<{
+      user: { id: string; whitelisted: boolean };
+    }>();
+    expect(account.user.whitelisted).toBe(false);
+
+    const adminUsers = await fetchWorker(
+      "https://example.com/api/v1/admin/users?q=trusted-author",
+      { headers: { authorization: "Bearer test-admin-token" } },
+    );
+    expect(adminUsers.status).toBe(200);
+    expect(await adminUsers.json()).toMatchObject({
+      items: [{
+        id: account.user.id,
+        email: "trusted-author@example.com",
+        nick: "TrustedAuthor",
+        whitelisted: false,
+        contribution_count: 0,
+      }],
+    });
+
+    const enabled = await fetchWorker(
+      `https://example.com/api/v1/admin/users/${account.user.id}/whitelist`,
+      {
+        method: "PUT",
+        headers: {
+          authorization: "Bearer test-admin-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ enabled: true }),
+      },
+    );
+    expect(enabled.status).toBe(200);
+    expect(await enabled.json()).toEqual({
+      id: account.user.id,
+      whitelisted: true,
+    });
+    expect(await fetchWorker("https://example.com/api/v1/user/me", {
+      headers: { cookie },
+    }).then((response) => response.json())).toMatchObject({
+      user: { whitelisted: true },
+    });
+
+    const direct = await submitNewUserManifest({
+      ...manifest,
+      author: "TrustedAuthor",
+      name: "Trusted Direct Publish",
+    }, cookie);
+    expect(direct.status).toBe(201);
+    const directResult = await direct.json<{
+      submission_id: string;
+      plugin_id: string;
+      status: string;
+    }>();
+    expect(directResult.status).toBe("accepted");
+    expect((await fetchWorker(
+      `https://example.com/api/v1/plugins/${directResult.plugin_id}/manifest`,
+    )).status).toBe(200);
+
+    const imported = await fetchWorker(
+      "https://example.com/api/v1/user/plugins/import",
+      {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({
+          plugins: [{
+            ...manifest,
+            author: "ignored",
+            name: "Trusted Batch Publish",
+          }],
+        }),
+      },
+    );
+    expect(imported.status).toBe(201);
+    const importedResult = await imported.json<{
+      items: Array<{ plugin_id: string }>;
+    }>();
+    const submittedDrafts = await fetchWorker(
+      "https://example.com/api/v1/user/plugins/submit-drafts",
+      { method: "POST", headers: { cookie } },
+    );
+    expect(submittedDrafts.status).toBe(201);
+    expect(await submittedDrafts.json()).toMatchObject({
+      submitted_count: 1,
+      published_count: 1,
+      items: [{ status: "accepted" }],
+    });
+    expect((await fetchWorker(
+      `https://example.com/api/v1/plugins/${importedResult.items[0]?.plugin_id}/manifest`,
+    )).status).toBe(200);
+
+    const queue = await fetchWorker(
+      "https://example.com/api/v1/admin/reviews?limit=100",
+      { headers: { authorization: "Bearer test-admin-token" } },
+    ).then((response) => response.json<{
+      items: Array<{ user: { nick: string } }>;
+    }>());
+    expect(queue.items.some((item) => item.user.nick === "TrustedAuthor")).toBe(false);
+
+    const stats = await fetchWorker(
+      "https://example.com/api/v1/admin/users/stats",
+      { headers: { authorization: "Bearer test-admin-token" } },
+    );
+    expect(stats.status).toBe(200);
+    const statsBody = await stats.json<{
+      total_users: number;
+      whitelisted_users: number;
+      top_contributors: Array<{ id: string; contribution_count: number }>;
+    }>();
+    expect(statsBody).toMatchObject({
+      total_users: expect.any(Number),
+      whitelisted_users: expect.any(Number),
+    });
+    expect(statsBody.top_contributors[0]).toMatchObject({
+      id: account.user.id,
+      contribution_count: 2,
+    });
+
+    for (const pluginID of [
+      directResult.plugin_id,
+      importedResult.items[0]?.plugin_id,
+    ]) {
+      expect((await fetchWorker(
+        `https://example.com/api/v1/user/plugins/${pluginID}`,
+        { method: "DELETE", headers: { cookie } },
+      )).status).toBe(204);
+    }
+    expect((await fetchWorker(
+      `https://example.com/api/v1/admin/users/${account.user.id}/whitelist`,
+      {
+        method: "PUT",
+        headers: {
+          authorization: "Bearer test-admin-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ enabled: false }),
+      },
+    )).status).toBe(200);
+  });
+
   it("batch imports JSON plugins as drafts and replaces managed fields", async () => {
     const registration = await authRequest("/api/v1/auth/register", {
       email: "batch-importer@example.com",
@@ -805,6 +953,9 @@ describe("Plugin Store API", () => {
     expect(html).toContain("下架原因");
     expect(html).toContain("待审核投稿");
     expect(html).toContain("已上架插件");
+    expect(html).toContain("用户统计");
+    expect(html).toContain("贡献用户 Top 5");
+    expect(html).toContain("白名单管理");
     expect(html).toContain("查看插件");
     expect(html).toContain("查看内容");
     expect(html).toContain('id="review-manifest"');
