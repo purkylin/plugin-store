@@ -22,6 +22,14 @@ describe("Plugin Store API", () => {
       platforms: ["ios", "tvos"],
       minimum_ios_version: "1.0.0",
     });
+    const storedManifest = await env.DB.prepare(`
+      SELECT manifest_json
+      FROM plugin_releases
+      WHERE plugin_id = ? AND version = ?
+    `).bind(first.pluginID, "1.0.0").first<{ manifest_json: string }>();
+    expect(JSON.parse(storedManifest?.manifest_json ?? "{}").update_time).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+    );
     const unknownID = "00000000-0000-4000-8000-000000000000";
 
     const available = await checkUpdates({
@@ -57,6 +65,8 @@ describe("Plugin Store API", () => {
         },
       ],
     });
+    expect(await sha256(JSON.stringify(available.items[0]?.manifest ?? null)))
+      .toBe(available.items[0]?.manifest_sha256);
 
     expect(await checkUpdates({
       platform: "ios",
@@ -147,7 +157,12 @@ describe("Plugin Store API", () => {
       update_time: expect.any(String),
     });
     expect(downloadedManifest.update_time).not.toBe(manifest.update_time);
+    expect(downloadedManifest.update_time).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
+    );
     expect(await sha256(manifestJSON)).toBe(catalog.items[0]?.manifest_sha256);
+    expect(downloaded.headers.get("etag"))
+      .toBe(`"sha256-${catalog.items[0]?.manifest_sha256}"`);
 
     const event = installEvent(first.pluginID);
     expect((await postEvent(event)).status).toBe(204);
@@ -705,17 +720,24 @@ describe("Plugin Store API", () => {
     expect(registration.headers.get("set-cookie")).toContain("Secure");
     const account = await registration.json<{
       user: { id: string; email: string; nick: string };
+      expires_at: string;
     }>();
     expect(account.user).toMatchObject({
       email: "author@example.com",
       nick: "ReviewAuthor",
     });
+    expect(account.expires_at).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
+    );
     expect(await env.DB.prepare(`
-      SELECT password_iterations
+      SELECT password_iterations, created_at
       FROM users
       WHERE email = ?
     `).bind("author@example.com").first()).toEqual({
       password_iterations: 100_000,
+      created_at: expect.stringMatching(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+      ),
     });
 
     expect((await authRequest("/api/v1/auth/register", {

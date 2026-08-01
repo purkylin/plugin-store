@@ -1,12 +1,20 @@
+import { stripISO8601Milliseconds } from "./time";
+
 const jsonHeaders = {
   "content-type": "application/json; charset=utf-8",
 };
 
 export function json(data: unknown, status = 200, headers?: HeadersInit): Response {
-  return new Response(JSON.stringify(data), {
+  return new Response(stringifyJSON(data), {
     status,
     headers: { ...jsonHeaders, ...headers },
   });
+}
+
+export function stringifyJSON(data: unknown): string {
+  return JSON.stringify(data, (_key, value: unknown) => (
+    typeof value === "string" ? stripISO8601Milliseconds(value) : value
+  ));
 }
 
 export function error(code: string, message: string, status: number): Response {

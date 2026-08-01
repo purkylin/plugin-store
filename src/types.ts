@@ -16,12 +16,12 @@ export interface CatalogRow {
   updated_at: string;
   install_count: number;
   manifest_sha256: string;
+  manifest_json: string;
   minimum_ios_version: string | null;
   minimum_tvos_version: string | null;
 }
 
 export interface AdminCatalogRow extends CatalogRow {
-  manifest_json: string;
   supports_ios: number;
   supports_tvos: number;
 }

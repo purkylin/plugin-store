@@ -7,7 +7,7 @@ import {
   registerUser,
   requireUser,
 } from "./auth";
-import { error, handleError, HTTPError, json, readJSON } from "./http";
+import { error, handleError, HTTPError, json, readJSON, stringifyJSON } from "./http";
 import {
   acceptPluginSubmission,
   cancelSubmission,
@@ -180,7 +180,19 @@ async function route(request: Request, env: Env): Promise<Response> {
       env.DB,
       parseUpdateCheckRequest(await readJSON(request)),
     );
-    return json(result, 200, { "cache-control": "no-store" });
+    const items = await Promise.all(result.items.map(async (item) => {
+      if (!("_manifest_json" in item)) {
+        return item;
+      }
+      const { _manifest_json: manifestJSON, ...publicItem } = item;
+      return {
+        ...publicItem,
+        manifest_sha256: publicItem.manifest_sha256 === null
+          ? null
+          : await apiManifestChecksum(manifestJSON),
+      };
+    }));
+    return json({ ...result, items }, 200, { "cache-control": "no-store" });
   }
   if (request.method === "GET" && apiPath === "/v1/admin/plugins") {
     return adminCatalog(request, url, env);
@@ -302,7 +314,12 @@ async function adminCatalog(request: Request, url: URL, env: Env): Promise<Respo
   requireAdmin(request, env);
   const limit = parseLimit(url.searchParams.get("limit"));
   const cursor = decodeCursor(url.searchParams.get("cursor"));
-  return json(await listAdminPlugins(env.DB, limit, cursor));
+  const result = await listAdminPlugins(env.DB, limit, cursor);
+  const items = await Promise.all(result.items.map(async (item) => ({
+    ...item,
+    manifest_sha256: await sha256(stringifyJSON(item.manifest)),
+  })));
+  return json({ ...result, items });
 }
 
 async function catalog(url: URL, env: Env): Promise<Response> {
@@ -324,7 +341,14 @@ async function catalog(url: URL, env: Env): Promise<Response> {
     type,
     search,
   });
-  return json(result, 200, { "cache-control": "public, max-age=60" });
+  const items = await Promise.all(result.items.map(async (item) => {
+    const { _manifest_json: manifestJSON, ...publicItem } = item;
+    return {
+      ...publicItem,
+      manifest_sha256: await apiManifestChecksum(manifestJSON),
+    };
+  }));
+  return json({ ...result, items }, 200, { "cache-control": "public, max-age=60" });
 }
 
 async function manifest(pluginID: string, env: Env): Promise<Response> {
@@ -332,13 +356,19 @@ async function manifest(pluginID: string, env: Env): Promise<Response> {
   if (row === null) {
     return error("plugin_not_found", "Plugin not found.", 404);
   }
-  return new Response(row.manifest_json, {
+  const manifestJSON = stringifyJSON(JSON.parse(row.manifest_json) as unknown);
+  const checksum = await sha256(manifestJSON);
+  return new Response(manifestJSON, {
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "public, max-age=60",
-      etag: `"sha256-${row.manifest_sha256}"`,
+      etag: `"sha256-${checksum}"`,
     },
   });
+}
+
+async function apiManifestChecksum(manifestJSON: string): Promise<string> {
+  return sha256(stringifyJSON(JSON.parse(manifestJSON) as unknown));
 }
 
 async function installEvent(request: Request, pluginID: string, env: Env): Promise<Response> {

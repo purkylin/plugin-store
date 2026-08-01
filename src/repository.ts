@@ -124,7 +124,8 @@ export async function listPlugins(db: D1Database, options: ListOptions) {
   const sql = `
     SELECT p.id, p.name, p.description, p.author, p.icon_url,
            r.version AS latest_version, p.updated_at,
-           r.manifest_sha256, r.minimum_ios_version, r.minimum_tvos_version,
+           r.manifest_sha256, r.manifest_json,
+           r.minimum_ios_version, r.minimum_tvos_version,
            (SELECT COUNT(*) FROM plugin_installations i WHERE i.plugin_id = p.id) AS install_count
     FROM plugins p
     JOIN plugin_releases r ON r.id = p.published_release_id
@@ -146,7 +147,10 @@ export async function listPlugins(db: D1Database, options: ListOptions) {
   const items = compatible.slice(start, start + options.pageSize);
 
   return {
-    items: items.map(toCatalogItem),
+    items: items.map((row) => ({
+      ...toCatalogItem(row),
+      _manifest_json: row.manifest_json,
+    })),
     total,
     page: options.page,
     page_size: options.pageSize,
@@ -301,6 +305,7 @@ export async function checkPluginUpdates(
         status: "incompatible" as const,
         manifest: null,
         manifest_sha256: null,
+        _manifest_json: row.manifest_json,
       };
     }
 
@@ -314,6 +319,7 @@ export async function checkPluginUpdates(
         status: "update_available" as const,
         manifest: JSON.parse(row.manifest_json) as Record<string, unknown>,
         manifest_sha256: row.manifest_sha256,
+        _manifest_json: row.manifest_json,
       };
     }
 
@@ -325,6 +331,7 @@ export async function checkPluginUpdates(
       status: "up_to_date" as const,
       manifest: null,
       manifest_sha256: row.manifest_sha256,
+      _manifest_json: row.manifest_json,
     };
   });
 
