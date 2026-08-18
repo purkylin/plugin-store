@@ -3,6 +3,7 @@ import type {
   InstallAction,
   InstallEvent,
   Platform,
+  PluginVisibility,
   PluginManifestMetadata,
   PublishRequest,
   UpdateCheckRequest,
@@ -95,6 +96,36 @@ export function parsePluginID(value: string): string {
   throw new HTTPError(400, "invalid_plugin_id", "The plugin ID is invalid.");
 }
 
+export function parsePluginTypeRequest(value: unknown): { value: string; name: string } {
+  const body = requireRecord(value);
+  const typeValue = requireString(body.value, "value").trim();
+  const name = requireString(body.name, "name").trim();
+  if (!/^[a-z][a-z0-9._-]{0,39}$/.test(typeValue)) {
+    throw new HTTPError(
+      400,
+      "invalid_plugin_type_value",
+      "value must start with a lowercase letter and contain only lowercase letters, numbers, dots, underscores, or hyphens.",
+    );
+  }
+  if (name.length > 60) {
+    throw new HTTPError(400, "invalid_plugin_type_name", "name must not exceed 60 characters.");
+  }
+  return { value: typeValue, name };
+}
+
+export function parseInspectRequest(value: unknown): { url: string } {
+  const body = requireRecord(value);
+  const url = requireURL(body.url, "url");
+  return { url };
+}
+
+export function parsePluginTypeValue(value: string): string {
+  if (/^[a-z][a-z0-9._-]{0,39}$/.test(value)) {
+    return value;
+  }
+  throw new HTTPError(400, "invalid_plugin_type_value", "The plugin type value is invalid.");
+}
+
 export function parseInstallEvent(value: unknown, pathID: string): InstallEvent {
   const body = requireRecord(value);
   const eventID = requireUUID(body.event_id, "event_id");
@@ -179,17 +210,33 @@ export function parsePublishRequest(
   }
 
   const platforms = parsePlatforms(body.platforms);
+  const visibility = parseVisibility(body.visibility);
   const minimumIOS = optionalVersion(body.minimum_ios_version, "minimum_ios_version");
   const minimumTVOS = optionalVersion(body.minimum_tvos_version, "minimum_tvos_version");
   return {
     request: {
       manifest,
+      ...(visibility === "public" ? {} : { visibility }),
       ...(platforms === undefined ? {} : { platforms }),
       ...(minimumIOS === null ? {} : { minimum_ios_version: minimumIOS }),
       ...(minimumTVOS === null ? {} : { minimum_tvos_version: minimumTVOS }),
     },
     metadata,
   };
+}
+
+function parseVisibility(value: unknown): PluginVisibility {
+  if (value === undefined || value === "public") {
+    return "public";
+  }
+  if (value === "private") {
+    return value;
+  }
+  throw new HTTPError(
+    400,
+    "invalid_visibility",
+    "visibility must be public or private.",
+  );
 }
 
 function parseManifestMetadata(manifest: Record<string, unknown>): PluginManifestMetadata {

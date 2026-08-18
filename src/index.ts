@@ -15,44 +15,53 @@ import {
   claimPluginID,
   createPluginSubmission,
   deletePluginDraft,
+  deletePluginType,
   deleteOwnedPlugin,
   decodeCursor,
   getAdminUserStats,
   getLatestPluginRelease,
   getManifest,
+  getPluginDraftVisibility,
   getPendingSubmission,
   importPluginDrafts,
   listAdminPlugins,
   listAdminUsers,
   listPendingSubmissions,
+  listPluginTypes,
   listPlugins,
   listUserSubmissions,
   pluginExists,
   recordInstallEvent,
   rejectSubmission,
   requirePluginOwnership,
+  requirePluginTypeExists,
   savePluginDraft,
   setUserWhitelist,
   submitAllPluginDrafts,
   unpublishOwnedPlugin,
   unpublishPlugin,
+  upsertPluginType,
 } from "./repository";
 import { userSubmissionPage } from "./submit";
 import type { Env } from "./types";
 import {
   parseInstallEvent,
   parseCatalogSort,
+  parseInspectRequest,
   parseLimit,
   parseOptionalQuery,
   parsePage,
   parsePageSize,
   parsePlatform,
   parsePluginID,
+  parsePluginTypeRequest,
+  parsePluginTypeValue,
   parsePublishRequest,
   parseSortOrder,
   parseUpdateCheckRequest,
   parseVersion,
 } from "./validation";
+import { inspectPluginScript } from "./inspect";
 import { compareVersions } from "./version";
 
 export default {
@@ -133,6 +142,9 @@ async function route(request: Request, env: Env): Promise<Response> {
     const user = await requireUser(request, env.DB);
     return json(await listUserSubmissions(env.DB, user.id));
   }
+  if (request.method === "GET" && apiPath === "/v1/plugin-types") {
+    return json(await listPluginTypes(env.DB), 200, { "cache-control": "no-store" });
+  }
   if (request.method === "POST" && apiPath === "/v1/user/plugins") {
     return submitNewPlugin(request, env);
   }
@@ -163,10 +175,28 @@ async function route(request: Request, env: Env): Promise<Response> {
     requireAdmin(request, env);
     return json(await getAdminUserStats(env.DB));
   }
+  if (
+    (request.method === "GET" || request.method === "POST")
+    && apiPath === "/v1/admin/plugin-types"
+  ) {
+    requireAdmin(request, env);
+    if (request.method === "GET") {
+      return json(await listPluginTypes(env.DB));
+    }
+    return json(
+      await upsertPluginType(env.DB, parsePluginTypeRequest(await readJSON(request))),
+      200,
+    );
+  }
   if (request.method === "GET" && apiPath === "/v1/admin/users") {
     requireAdmin(request, env);
     const search = parseOptionalQuery(url.searchParams.get("q"), "q");
-    return json(await listAdminUsers(env.DB, search));
+    return json(await listAdminUsers(
+      env.DB,
+      search,
+      parsePage(url.searchParams.get("page")),
+      parsePageSize(url.searchParams.get("page_size")),
+    ));
   }
   if (request.method === "GET" && apiPath === "/v1/admin/reviews") {
     requireAdmin(request, env);
@@ -174,6 +204,11 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
   if (request.method === "GET" && apiPath === "/v1/plugins") {
     return catalog(url, env);
+  }
+  if (request.method === "POST" && apiPath === "/v1/plugins/inspect") {
+    const { url: inspectUrl } = parseInspectRequest(await readJSON(request));
+    const result = await inspectPluginScript(inspectUrl);
+    return json(result, 200, { "cache-control": "no-store" });
   }
   if (request.method === "POST" && apiPath === "/v1/plugins/check-updates") {
     const result = await checkPluginUpdates(
@@ -205,6 +240,18 @@ async function route(request: Request, env: Env): Promise<Response> {
     if (request.method === "POST" && segments[3] === "install-events") {
       return installEvent(request, pluginID, env);
     }
+  }
+  if (
+    request.method === "DELETE"
+    && segments.length === 4
+    && segments[0] === "v1"
+    && segments[1] === "admin"
+    && segments[2] === "plugin-types"
+  ) {
+    requireAdmin(request, env);
+    const value = parsePluginTypeValue(decodeURIComponent(segments[3] ?? ""));
+    await deletePluginType(env.DB, value);
+    return new Response(null, { status: 204 });
   }
   if (
     request.method === "PUT"
@@ -385,6 +432,21 @@ async function submitPlugin(request: Request, pluginID: string, env: Env): Promi
   const submittedAt = new Date().toISOString();
   const parsed = parsePublishRequest(await readJSON(request), pluginID, submittedAt);
   await requirePluginOwnership(env.DB, pluginID, user.id);
+  await requireUnchangedVisibility(
+    env.DB,
+    pluginID,
+    user.id,
+    parsed.request.visibility,
+  );
+  rejectPrivateSubmission(parsed.request.visibility);
+  const latest = await getLatestPluginRelease(env.DB, pluginID);
+  if (
+    latest === null
+    || parsed.request.manifest.type
+      === (JSON.parse(latest.manifest_json) as Record<string, unknown>).type
+  ) {
+    await requirePluginTypeExists(env.DB, parsed.request.manifest.type);
+  }
   return finishPluginSubmission(env, user, parsed, pluginID);
 }
 
@@ -414,6 +476,7 @@ async function submitNewPlugin(request: Request, env: Env): Promise<Response> {
     pluginID,
     new Date().toISOString(),
   );
+  rejectPrivateSubmission(parsed.request.visibility);
   if (parsed.metadata.author !== user.nick) {
     throw new HTTPError(
       400,
@@ -421,6 +484,7 @@ async function submitNewPlugin(request: Request, env: Env): Promise<Response> {
       "manifest.author must match the registered user nick.",
     );
   }
+  await requirePluginTypeExists(env.DB, parsed.request.manifest.type);
   await claimPluginID(env.DB, pluginID, user.id);
   return finishPluginSubmission(env, user, parsed, pluginID);
 }
@@ -434,6 +498,7 @@ async function saveNewDraft(request: Request, env: Env): Promise<Response> {
     new Date().toISOString(),
   );
   validateSubmissionAuthor(parsed, user.nick);
+  await requirePluginTypeExists(env.DB, parsed.request.manifest.type);
   await claimPluginID(env.DB, pluginID, user.id);
   const savedAt = await savePluginDraft(
     env.DB,
@@ -442,7 +507,13 @@ async function saveNewDraft(request: Request, env: Env): Promise<Response> {
     parsed.metadata,
     JSON.stringify(parsed.request.manifest),
   );
-  return json({ plugin_id: pluginID, status: "draft", saved_at: savedAt }, 201);
+  const visibility = parsed.request.visibility ?? "public";
+  return json({
+    plugin_id: pluginID,
+    status: visibility === "private" ? "private" : "draft",
+    visibility,
+    saved_at: savedAt,
+  }, 201);
 }
 
 async function importDrafts(request: Request, env: Env): Promise<Response> {
@@ -515,6 +586,9 @@ async function importDrafts(request: Request, env: Env): Promise<Response> {
     }
   });
 
+  for (const type of new Set(drafts.map((draft) => draft.request.manifest.type))) {
+    await requirePluginTypeExists(env.DB, type);
+  }
   const items = await importPluginDrafts(env.DB, user.id, drafts);
   return json({ items, imported_count: items.length }, 201);
 }
@@ -532,6 +606,12 @@ async function saveExistingDraft(
   );
   validateSubmissionAuthor(parsed, user.nick);
   await requirePluginOwnership(env.DB, pluginID, user.id);
+  await requireUnchangedVisibility(
+    env.DB,
+    pluginID,
+    user.id,
+    parsed.request.visibility,
+  );
   const latest = await getLatestPluginRelease(env.DB, pluginID);
   if (latest !== null) {
     const manifest = JSON.parse(latest.manifest_json) as Record<string, unknown>;
@@ -546,6 +626,7 @@ async function saveExistingDraft(
       );
     }
   }
+  await requirePluginTypeExists(env.DB, parsed.request.manifest.type);
   const savedAt = await savePluginDraft(
     env.DB,
     user.id,
@@ -553,7 +634,13 @@ async function saveExistingDraft(
     parsed.metadata,
     JSON.stringify(parsed.request.manifest),
   );
-  return json({ plugin_id: pluginID, status: "draft", saved_at: savedAt });
+  const visibility = parsed.request.visibility ?? "public";
+  return json({
+    plugin_id: pluginID,
+    status: visibility === "private" ? "private" : "draft",
+    visibility,
+    saved_at: savedAt,
+  });
 }
 
 async function finishPluginSubmission(
@@ -562,6 +649,7 @@ async function finishPluginSubmission(
   parsed: ReturnType<typeof parsePublishRequest>,
   pluginID: string,
 ): Promise<Response> {
+  rejectPrivateSubmission(parsed.request.visibility);
   if (parsed.metadata.author !== user.nick) {
     throw new HTTPError(
       400,
@@ -595,6 +683,33 @@ async function finishPluginSubmission(
     }, 201);
   }
   return json({ submission_id: submissionID, plugin_id: pluginID, status: "pending" }, 202);
+}
+
+function rejectPrivateSubmission(visibility: "public" | "private" | undefined): void {
+  if (visibility === "private") {
+    throw new HTTPError(
+      409,
+      "private_plugin_cannot_be_submitted",
+      "Private plugins can be saved and exported, but cannot be submitted for review.",
+    );
+  }
+}
+
+async function requireUnchangedVisibility(
+  db: D1Database,
+  pluginID: string,
+  userID: string,
+  requestedVisibility: "public" | "private" | undefined,
+): Promise<void> {
+  const savedVisibility = await getPluginDraftVisibility(db, pluginID, userID);
+  const requested = requestedVisibility ?? "public";
+  if (savedVisibility !== null && savedVisibility !== requested) {
+    throw new HTTPError(
+      409,
+      "visibility_immutable",
+      "Plugin visibility is fixed when the plugin is created and cannot be changed.",
+    );
+  }
 }
 
 function withManifestID(value: unknown, pluginID: string): Record<string, unknown> {

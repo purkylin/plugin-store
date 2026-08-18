@@ -52,6 +52,7 @@ interface PluginDraftRow {
   minimum_ios_version: string | null;
   minimum_tvos_version: string | null;
   saved_at: string;
+  is_private: number;
   published_version: string | null;
   approved_version: string | null;
 }
@@ -66,6 +67,7 @@ interface DraftSubmissionRow {
   pending_submission_id: string | null;
   latest_version: string | null;
   latest_manifest_json: string | null;
+  is_private: number;
 }
 
 interface AdminUserRow {
@@ -99,8 +101,9 @@ export interface PluginSubmissionRow {
 }
 
 type SubmissionItem = ReturnType<typeof toSubmissionItem>;
-type UserPluginItem = Omit<SubmissionItem, "status"> & {
-  status: SubmissionItem["status"] | "draft";
+type UserPluginItem = Omit<SubmissionItem, "status" | "visibility"> & {
+  status: SubmissionItem["status"] | "draft" | "private";
+  visibility: "public" | "private";
   history: SubmissionItem[];
 };
 
@@ -199,6 +202,11 @@ export async function getAdminUserStats(db: D1Database) {
            SUM(CASE WHEN is_whitelisted = 1 THEN 1 ELSE 0 END) AS whitelisted_users
     FROM users
   `).first<{ total_users: number; whitelisted_users: number | null }>();
+  const privateCounts = await db.prepare(`
+    SELECT COUNT(*) AS private_plugins
+    FROM plugin_drafts
+    WHERE is_private = 1
+  `).first<{ private_plugins: number }>();
   const contributors = await db.prepare(`
     ${adminUserSelect()}
     WHERE EXISTS (
@@ -212,26 +220,116 @@ export async function getAdminUserStats(db: D1Database) {
   return {
     total_users: counts?.total_users ?? 0,
     whitelisted_users: counts?.whitelisted_users ?? 0,
+    private_plugins: privateCounts?.private_plugins ?? 0,
     top_contributors: contributors.results.map(toAdminUser),
   };
+}
+
+export async function listPluginTypes(db: D1Database) {
+  const result = await db.prepare(`
+    SELECT value, name, created_at, updated_at
+    FROM plugin_types
+    ORDER BY name COLLATE NOCASE ASC, value COLLATE NOCASE ASC
+  `).all<{
+    value: string;
+    name: string;
+    created_at: string;
+    updated_at: string;
+  }>();
+  return { items: result.results };
+}
+
+export async function upsertPluginType(
+  db: D1Database,
+  type: { value: string; name: string },
+) {
+  const now = new Date().toISOString();
+  await db.prepare(`
+    INSERT INTO plugin_types (value, name, created_at, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(value) DO UPDATE SET
+      name = excluded.name,
+      updated_at = excluded.updated_at
+  `).bind(type.value, type.name, now, now).run();
+  return { ...type, updated_at: now };
+}
+
+export async function deletePluginType(db: D1Database, value: string): Promise<void> {
+  const used = await db.prepare(`
+    SELECT 1 AS found
+    WHERE EXISTS (
+      SELECT 1 FROM plugin_drafts
+      WHERE json_extract(manifest_json, '$.type') = ?
+    ) OR EXISTS (
+      SELECT 1 FROM plugin_submissions
+      WHERE json_extract(manifest_json, '$.type') = ?
+    ) OR EXISTS (
+      SELECT 1 FROM plugin_releases
+      WHERE json_extract(manifest_json, '$.type') = ?
+    )
+  `).bind(value, value, value).first<{ found: number }>();
+  if (used !== null) {
+    throw new HTTPError(
+      409,
+      "plugin_type_in_use",
+      "This plugin type is used by an existing plugin and cannot be deleted.",
+    );
+  }
+  const result = await db.prepare("DELETE FROM plugin_types WHERE value = ?")
+    .bind(value).run();
+  if ((result.meta.changes ?? 0) === 0) {
+    throw new HTTPError(404, "plugin_type_not_found", "Plugin type not found.");
+  }
+}
+
+export async function requirePluginTypeExists(
+  db: D1Database,
+  value: unknown,
+): Promise<void> {
+  if (typeof value !== "string") {
+    throw new HTTPError(400, "invalid_plugin_type", "manifest.type is invalid.");
+  }
+  const row = await db.prepare("SELECT 1 AS found FROM plugin_types WHERE value = ?")
+    .bind(value).first<{ found: number }>();
+  if (row === null) {
+    throw new HTTPError(
+      400,
+      "invalid_plugin_type",
+      `Plugin type ${value} is not configured.`,
+    );
+  }
 }
 
 export async function listAdminUsers(
   db: D1Database,
   search: string | null,
+  page = 1,
+  pageSize = 20,
 ) {
   const filter = search === null
     ? ""
     : `WHERE u.email LIKE ? ESCAPE '\\' COLLATE NOCASE
        OR u.nick LIKE ? ESCAPE '\\' COLLATE NOCASE`;
   const pattern = search === null ? [] : [`%${escapeLike(search)}%`, `%${escapeLike(search)}%`];
+  const count = await db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM users u
+    ${filter}
+  `).bind(...pattern).first<{ total: number }>();
+  const total = count?.total ?? 0;
   const result = await db.prepare(`
     ${adminUserSelect()}
     ${filter}
     ORDER BY u.is_whitelisted DESC, contribution_count DESC, u.created_at DESC
-    LIMIT 100
-  `).bind(...pattern).all<AdminUserRow>();
-  return { items: result.results.map(toAdminUser) };
+    LIMIT ? OFFSET ?
+  `).bind(...pattern, pageSize, (page - 1) * pageSize).all<AdminUserRow>();
+  return {
+    items: result.results.map(toAdminUser),
+    page,
+    page_size: pageSize,
+    total,
+    total_pages: Math.max(1, Math.ceil(total / pageSize)),
+  };
 }
 
 export async function setUserWhitelist(
@@ -550,14 +648,15 @@ export async function savePluginDraft(
   await db.prepare(`
     INSERT INTO plugin_drafts (
       plugin_id, user_id, manifest_json, supports_ios, supports_tvos,
-      minimum_ios_version, minimum_tvos_version, saved_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      minimum_ios_version, minimum_tvos_version, saved_at, is_private
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(plugin_id) DO UPDATE SET
       manifest_json = excluded.manifest_json,
       supports_ios = excluded.supports_ios,
       supports_tvos = excluded.supports_tvos,
       minimum_ios_version = excluded.minimum_ios_version,
       minimum_tvos_version = excluded.minimum_tvos_version,
+      is_private = excluded.is_private,
       saved_at = excluded.saved_at
     WHERE plugin_drafts.user_id = excluded.user_id
   `).bind(
@@ -569,6 +668,7 @@ export async function savePluginDraft(
     request.minimum_ios_version ?? null,
     request.minimum_tvos_version ?? null,
     savedAt,
+    request.visibility === "private" ? 1 : 0,
   ).run();
   return savedAt;
 }
@@ -581,7 +681,12 @@ export async function importPluginDrafts(
     metadata: PluginManifestMetadata;
     manifestJSON: string;
   }>,
-): Promise<Array<{ plugin_id: string; status: "draft"; saved_at: string }>> {
+): Promise<Array<{
+  plugin_id: string;
+  status: "draft" | "private";
+  visibility: "public" | "private";
+  saved_at: string;
+}>> {
   const savedAt = new Date().toISOString();
   const statements: D1PreparedStatement[] = [];
   for (const draft of drafts) {
@@ -594,8 +699,8 @@ export async function importPluginDrafts(
       db.prepare(`
         INSERT INTO plugin_drafts (
           plugin_id, user_id, manifest_json, supports_ios, supports_tvos,
-          minimum_ios_version, minimum_tvos_version, saved_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          minimum_ios_version, minimum_tvos_version, saved_at, is_private
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         draft.metadata.id,
         userID,
@@ -605,13 +710,15 @@ export async function importPluginDrafts(
         draft.request.minimum_ios_version ?? null,
         draft.request.minimum_tvos_version ?? null,
         savedAt,
+        draft.request.visibility === "private" ? 1 : 0,
       ),
     );
   }
   await db.batch(statements);
   return drafts.map((draft) => ({
     plugin_id: draft.metadata.id,
-    status: "draft",
+    status: draft.request.visibility === "private" ? "private" : "draft",
+    visibility: draft.request.visibility === "private" ? "private" : "public",
     saved_at: savedAt,
   }));
 }
@@ -626,7 +733,7 @@ export async function submitAllPluginDrafts(
 }>> {
   const result = await db.prepare(`
     SELECT d.plugin_id, d.manifest_json, d.supports_ios, d.supports_tvos,
-           d.minimum_ios_version, d.minimum_tvos_version,
+           d.minimum_ios_version, d.minimum_tvos_version, d.is_private,
            pending.id AS pending_submission_id,
            latest.version AS latest_version,
            latest.manifest_json AS latest_manifest_json
@@ -640,7 +747,7 @@ export async function submitAllPluginDrafts(
       ORDER BY release.published_at DESC, release.id DESC
       LIMIT 1
     )
-    WHERE d.user_id = ?
+    WHERE d.user_id = ? AND d.is_private = 0
     ORDER BY d.saved_at ASC, d.plugin_id ASC
   `).bind(userID).all<DraftSubmissionRow>();
   if (result.results.length === 0) {
@@ -725,6 +832,34 @@ export async function deletePluginDraft(
   ).bind(pluginID, userID).run();
 }
 
+export async function getPluginDraftVisibility(
+  db: D1Database,
+  pluginID: string,
+  userID: string,
+): Promise<"public" | "private" | null> {
+  const row = await db.prepare(`
+    SELECT d.is_private,
+           EXISTS (
+             SELECT 1 FROM plugin_submissions s
+             WHERE s.plugin_id = o.plugin_id
+           ) AS has_public_submission
+    FROM plugin_owners o
+    LEFT JOIN plugin_drafts d
+      ON d.plugin_id = o.plugin_id AND d.user_id = o.user_id
+    WHERE o.plugin_id = ? AND o.user_id = ?
+  `).bind(pluginID, userID).first<{
+    is_private: number | null;
+    has_public_submission: number;
+  }>();
+  if (row === null) {
+    return null;
+  }
+  if (row.is_private !== null) {
+    return row.is_private === 1 ? "private" : "public";
+  }
+  return row.has_public_submission === 1 ? "public" : null;
+}
+
 export async function listUserSubmissions(db: D1Database, userID: string) {
   const result = await db.prepare(`
     SELECT s.id, s.plugin_id, s.user_id, u.email, u.nick, s.version,
@@ -760,7 +895,7 @@ export async function listUserSubmissions(db: D1Database, userID: string) {
   const drafts = await db.prepare(`
     SELECT d.plugin_id, d.user_id, u.email, u.nick, d.manifest_json,
            d.supports_ios, d.supports_tvos,
-           d.minimum_ios_version, d.minimum_tvos_version, d.saved_at,
+           d.minimum_ios_version, d.minimum_tvos_version, d.saved_at, d.is_private,
            current_release.version AS published_version,
            (
              SELECT release.version
@@ -791,7 +926,8 @@ export async function listUserSubmissions(db: D1Database, userID: string) {
       ],
       minimum_ios_version: row.minimum_ios_version,
       minimum_tvos_version: row.minimum_tvos_version,
-      status: "draft",
+      status: row.is_private === 1 ? "private" : "draft",
+      visibility: row.is_private === 1 ? "private" : "public",
       rejection_reason: null,
       submitted_at: row.saved_at,
       reviewed_at: null,
@@ -1058,6 +1194,7 @@ function toSubmissionItem(row: PluginSubmissionRow) {
     minimum_ios_version: row.minimum_ios_version,
     minimum_tvos_version: row.minimum_tvos_version,
     status: row.status,
+    visibility: "public" as const,
     rejection_reason: row.rejection_reason,
     submitted_at: row.submitted_at,
     reviewed_at: row.reviewed_at,

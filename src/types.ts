@@ -5,6 +5,7 @@ export interface Env {
 
 export type Platform = "ios" | "tvos";
 export type InstallAction = "install" | "update" | "uninstall";
+export type PluginVisibility = "public" | "private";
 
 export interface CatalogRow {
   id: string;
@@ -45,6 +46,7 @@ export interface InstallEvent {
 
 export interface PublishRequest {
   manifest: Record<string, unknown>;
+  visibility?: PluginVisibility;
   platforms?: Platform[];
   minimum_ios_version?: string | null;
   minimum_tvos_version?: string | null;

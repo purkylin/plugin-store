@@ -10,6 +10,9 @@ Cloudflare Worker + D1 implementation of the Hawk Plugin Store API.
 - Unique cumulative installation counts.
 - Admin bearer-token protected review and unpublish endpoints.
 - Responsive management dashboard with structured manifest editing.
+- Private plugins that can be edited, viewed, copied, and manually imported without entering review or the public catalog.
+- Create-from-template support for cloning an owned plugin configuration into a new plugin.
+- Administrator-configured plugin types with separate display names and manifest values.
 - Email/password author accounts with secure HttpOnly session cookies and globally unique email and nick.
 - User plugin submissions with administrator accept/reject review.
 - Registered-user statistics, contribution Top 5, and an administrator-managed review-free whitelist.
@@ -89,6 +92,8 @@ For a controlled production rollout, you can instead create D1 first with
 
 Public app endpoints:
 
+- `GET /api/v1/plugin-types` (configured `{name, value}` choices)
+- `POST /api/v1/plugins/inspect` (fetch and inspect metadata from script URL)
 - `GET /api/v1/plugins` (`page`, `page_size`, `sort`, `order`, `type`, and `q`)
 - `POST /api/v1/plugins/check-updates` (up to 100 `{id, version}` items)
 - `GET /api/v1/plugins/{plugin_id}/manifest`
@@ -116,10 +121,13 @@ Draft, pending, rejected, and unpublished releases are never returned.
 
 Administrator endpoints:
 
+- `GET /api/v1/admin/plugin-types`
+- `POST /api/v1/admin/plugin-types` (create a value or update its display name)
+- `DELETE /api/v1/admin/plugin-types/{value}` (unused types only)
 - `GET /api/v1/admin/plugins`
 - `POST /api/v1/admin/plugins/{plugin_id}/unpublish`
 - `GET /api/v1/admin/users/stats`
-- `GET /api/v1/admin/users` (`q` searches email or nick)
+- `GET /api/v1/admin/users` (`q` searches email or nick; `page` and `page_size` paginate results)
 - `PUT /api/v1/admin/users/{user_id}/whitelist`
 - `GET /api/v1/admin/reviews`
 - `POST /api/v1/admin/reviews/{submission_id}/accept`
@@ -136,7 +144,7 @@ Author accounts and submissions:
 - `POST /api/v1/user/plugins` (server-generated UUID)
 - `POST /api/v1/user/plugins/draft`
 - `POST /api/v1/user/plugins/import` (batch-import 1–100 new drafts)
-- `POST /api/v1/user/plugins/submit-drafts` (submit all drafts for review)
+- `POST /api/v1/user/plugins/submit-drafts` (submit all public drafts for review; private plugins are skipped)
 - `PUT /api/v1/user/plugins/{plugin_id}`
 - `PUT /api/v1/user/plugins/{plugin_id}/draft`
 - `DELETE /api/v1/user/plugins/{plugin_id}`
@@ -147,6 +155,14 @@ The author portal accepts a JSON array of manifests, or an object containing a
 review. Imported `id`, `author`, and `update_time` values are ignored; the
 server generates the ID and timestamp and uses the signed-in user's nick as the
 author.
+
+Set `visibility` to `private` when first saving a plugin to keep it permanently
+private. Visibility cannot be changed after creation. Private plugins remain
+editable in the author portal, are excluded from both single and batch review
+submission, and expose their manifest in the configuration viewer for copying
+into Hawk's manual import flow. The “Use as template” action copies an existing
+plugin's editable configuration into a new plugin while regenerating managed
+fields such as `id`, `author`, and `update_time`.
 
 Whitelisted users still create accepted submission records, but their new
 plugins, updates, and batch-submitted drafts bypass the pending review queue and

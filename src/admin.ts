@@ -33,8 +33,30 @@ const template = String.raw`<!doctype html>
     }
     button, input, textarea, select { font: inherit; }
     button { cursor: pointer; }
-    .shell { width: min(1240px, calc(100% - 40px)); margin: 0 auto; padding: 34px 0 64px; }
-    header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 28px; }
+    .shell {
+      display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 24px;
+      width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding: 24px 0 64px;
+      align-items: start;
+    }
+    .sidebar {
+      position: sticky; top: 24px; display: flex; flex-direction: column; min-height: calc(100vh - 48px);
+      padding: 18px; border: 1px solid var(--line); border-radius: 20px;
+      background: rgba(11, 27, 45, .88); box-shadow: var(--shadow); backdrop-filter: blur(18px);
+    }
+    .sidebar .brand { padding: 2px 4px 22px; }
+    .sidebar-nav { display: grid; gap: 6px; }
+    .nav-button {
+      display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 12px;
+      border: 0; border-radius: 11px; color: var(--muted); background: transparent; text-align: left;
+    }
+    .nav-button:hover { color: var(--text); background: rgba(108, 169, 255, .08); }
+    .nav-button[aria-current="page"] { color: var(--text); background: rgba(108, 169, 255, .15); }
+    .nav-icon { width: 20px; color: var(--blue); text-align: center; }
+    .sidebar-footer { display: grid; gap: 12px; margin-top: auto; padding-top: 20px; }
+    .sidebar-footer .button { width: 100%; }
+    .content { min-width: 0; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 8px 0 24px; }
+    .page-panel { display: grid; gap: 20px; }
     .brand { display: flex; align-items: center; gap: 14px; }
     .mark {
       display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px;
@@ -53,13 +75,15 @@ const template = String.raw`<!doctype html>
       border: 1px solid var(--line); border-radius: 20px; background: var(--panel);
       box-shadow: var(--shadow); backdrop-filter: blur(18px); overflow: hidden;
     }
-    .review-card { margin-bottom: 20px; }
-    .user-card { margin-bottom: 20px; }
-    .metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 180px)); gap: 12px; padding: 20px; }
+    .review-card, .user-card, .type-card { margin: 0; }
+    .type-form { display: grid; grid-template-columns: minmax(160px,.7fr) minmax(220px,1fr) auto; gap: 12px; align-items: end; }
+    .type-form .field { margin: 0; }
+    .type-form .actions { padding-bottom: 1px; }
+    .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 180px)); gap: 12px; padding: 20px; }
     .metric { padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(2, 10, 19, .3); }
     .metric strong { display: block; font-size: 26px; line-height: 1.2; }
     .metric span { color: var(--muted); font-size: 12px; }
-    .user-sections { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--line); }
+    .user-sections { display: grid; grid-template-columns: 1fr 1fr; }
     .user-section + .user-section { border-left: 1px solid var(--line); }
     .user-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 15px 20px; border-bottom: 1px solid var(--line); }
     .user-section-head h3 { font-size: 14px; }
@@ -121,6 +145,14 @@ const template = String.raw`<!doctype html>
     .editor-tab[aria-selected="true"] { color: var(--text); background: rgba(108, 169, 255, .15); }
     .field-help { display: block; color: var(--muted); font-size: 11px; margin-top: 5px; }
     .required::after { content: " *"; color: var(--danger); }
+    .input-group { display: flex; gap: 8px; align-items: center; }
+    .input-group input { flex: 1; }
+    .inspect-results { display: grid; gap: 10px; margin: 16px 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: rgba(2, 10, 19, .45); }
+    .inspect-item { display: grid; grid-template-columns: 80px 1fr; gap: 10px; font-size: 13px; line-height: 1.5; }
+    .inspect-label { color: var(--muted); font-weight: 500; }
+    .inspect-val { color: var(--text); overflow-wrap: anywhere; }
+    .inspect-desc { white-space: pre-wrap; }
+    #inspect-dialog { width: min(620px, calc(100% - 32px)); }
     .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 20px 0 10px; }
     .section-head h3 { margin: 0; font-size: 14px; }
     .section-head .button { padding: 6px 10px; font-size: 12px; }
@@ -141,7 +173,7 @@ const template = String.raw`<!doctype html>
     .notice { min-height: 22px; margin-top: 13px; font-size: 13px; color: var(--muted); }
     .notice.ok { color: var(--accent); }
     .notice.error { color: var(--danger); }
-    .review-card > .notice, .user-card > .notice { margin: 0; padding: 0 20px 14px; }
+    .review-card > .notice, .user-card > .notice, .type-card > .notice { margin: 0; padding: 0 20px 14px; }
     dialog {
       width: min(430px, calc(100% - 32px)); color: var(--text); border: 1px solid var(--line);
       border-radius: 20px; background: #0b1b2d; box-shadow: var(--shadow); padding: 0;
@@ -153,15 +185,25 @@ const template = String.raw`<!doctype html>
     #review-dialog { width: min(760px, calc(100% - 32px)); }
     .review-meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
     #review-manifest { min-height: 180px; max-height: 360px; margin-bottom: 16px; }
+    .dialog-toolbar { display: flex; justify-content: flex-end; margin: -4px 0 12px; }
     @media (max-width: 900px) {
+      .shell { grid-template-columns: 1fr; width: min(100% - 24px, 720px); padding-top: 12px; }
+      .sidebar { position: static; min-height: 0; padding: 12px; }
+      .sidebar .brand { padding: 0 2px 12px; }
+      .sidebar-nav { display: flex; overflow-x: auto; }
+      .nav-button { flex: 0 0 auto; width: auto; }
+      .sidebar-footer { display: flex; align-items: center; justify-content: space-between; padding-top: 12px; }
+      .sidebar-footer .button { width: auto; }
       .layout.editor-open { grid-template-columns: 1fr; }
-      .shell { width: min(100% - 24px, 720px); padding-top: 20px; }
       header { align-items: flex-start; }
       .status { padding-top: 8px; }
       .user-sections { grid-template-columns: 1fr; }
       .user-section + .user-section { border-left: 0; border-top: 1px solid var(--line); }
+      .type-form { grid-template-columns: 1fr 1fr; }
+      .type-form .actions { grid-column: 1 / -1; }
     }
     @media (max-width: 520px) {
+      .metrics { grid-template-columns: 1fr; }
       .row { grid-template-columns: 1fr; gap: 0; }
       .custom-row { grid-template-columns: 1fr 90px auto; }
       .custom-row .custom-value { grid-column: 1 / -1; grid-row: 2; }
@@ -174,21 +216,55 @@ const template = String.raw`<!doctype html>
 </head>
 <body>
   <div class="shell">
-    <header>
+    <aside class="sidebar" id="admin-sidebar">
       <div class="brand">
         <div class="mark">H</div>
-        <div><h1>Plugin Store 管理</h1><p class="subtitle">审核用户投稿并管理已上架插件</p></div>
+        <div><h2>Plugin Store</h2><p class="subtitle">管理后台</p></div>
       </div>
-      <div class="status"><span class="dot"></span><span id="connection">等待验证</span></div>
+      <nav class="sidebar-nav" aria-label="后台导航">
+        <button class="nav-button" type="button" data-panel="reviews" aria-current="page"><span class="nav-icon">◎</span>待审核</button>
+        <button class="nav-button" type="button" data-panel="plugins"><span class="nav-icon">◇</span>已上架插件</button>
+        <button class="nav-button" type="button" data-panel="users"><span class="nav-icon">♙</span>用户与白名单</button>
+        <button class="nav-button" type="button" data-panel="settings"><span class="nav-icon">⚙</span>系统设置</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="status"><span class="dot"></span><span id="connection">等待验证</span></div>
+        <button class="button" id="reauth" type="button">更换管理员 Token</button>
+      </div>
+    </aside>
+    <div class="content">
+    <header>
+      <div><h1 id="page-title">待审核投稿</h1><p class="subtitle" id="page-subtitle">查看投稿内容并决定是否发布</p></div>
+      <button class="button" id="refresh" type="button">刷新数据</button>
     </header>
 
-    <section class="card user-card" aria-labelledby="users-title">
+    <section class="card type-card" data-page="settings" aria-labelledby="types-title" hidden>
+      <div class="card-head">
+        <div><h2 id="types-title">插件类型</h2><p class="subtitle">配置作者创建插件时可选择的名称和 value</p></div>
+      </div>
+      <form class="type-form" id="plugin-type-form">
+        <div class="field"><label class="required" for="type-value">Value</label><input id="type-value" maxlength="40" pattern="[a-z][a-z0-9._-]{0,39}" placeholder="例如 hot" required></div>
+        <div class="field"><label class="required" for="type-name">显示名称</label><input id="type-name" maxlength="60" placeholder="例如 热榜" required></div>
+        <div class="actions"><button class="button" id="cancel-type-edit" type="button" hidden>取消</button><button class="button primary" id="save-plugin-type" type="submit">新增类型</button></div>
+      </form>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>显示名称</th><th>Value</th><th></th></tr></thead>
+          <tbody id="plugin-type-rows"></tbody>
+        </table>
+        <div class="empty" id="plugin-types-empty" hidden>尚未配置插件类型。</div>
+      </div>
+      <p class="notice" id="plugin-type-notice" role="status"></p>
+    </section>
+
+    <section class="card user-card" data-page="users" aria-labelledby="users-title" hidden>
       <div class="card-head">
         <div><h2 id="users-title">用户统计</h2><p class="subtitle">注册用户、插件贡献排行与免审白名单</p></div>
       </div>
       <div class="metrics">
         <div class="metric"><strong id="total-users">—</strong><span>注册用户</span></div>
         <div class="metric"><strong id="whitelisted-users">—</strong><span>白名单用户</span></div>
+        <div class="metric"><strong id="private-plugins">—</strong><span>私有插件</span></div>
       </div>
       <div class="user-sections">
         <section class="user-section">
@@ -216,12 +292,17 @@ const template = String.raw`<!doctype html>
             </table>
             <div class="empty" id="users-empty" hidden>没有匹配的用户。</div>
           </div>
+          <div class="pager">
+            <button class="button" id="users-previous" type="button" disabled>上一页</button>
+            <span id="users-page-label">第 1 页</span>
+            <button class="button" id="users-next" type="button" disabled>下一页</button>
+          </div>
         </section>
       </div>
       <p class="notice" id="user-notice" role="status"></p>
     </section>
 
-    <section class="card review-card" aria-labelledby="reviews-title">
+    <section class="card review-card" data-page="reviews" aria-labelledby="reviews-title">
       <div class="card-head">
         <div><h2 id="reviews-title">待审核投稿</h2><p class="subtitle" id="review-summary">验证后载入</p></div>
       </div>
@@ -235,14 +316,10 @@ const template = String.raw`<!doctype html>
       <p class="notice" id="review-notice" role="status"></p>
     </section>
 
-    <main class="layout" id="workspace">
+    <main class="layout" id="workspace" data-page="plugins" hidden>
       <section class="card" aria-labelledby="plugins-title">
         <div class="card-head">
           <div><h2 id="plugins-title">已上架插件</h2><p class="subtitle" id="result-summary">—</p></div>
-          <div class="actions">
-            <button class="button" id="reauth" type="button">更换 Token</button>
-            <button class="button" id="refresh" type="button">刷新</button>
-          </div>
         </div>
         <div class="table-wrap">
           <table>
@@ -279,7 +356,13 @@ const template = String.raw`<!doctype html>
             </div>
             <div class="field"><label class="required" for="plugin-version">版本</label><input id="plugin-version" placeholder="例如 1.0.0" inputmode="decimal" autocomplete="off"><span class="field-help" id="version-help">新插件可从 1.0.0 开始。</span></div>
             <div class="field"><label for="plugin-icon">图标 URL</label><input id="plugin-icon" type="url" placeholder="https://…" autocomplete="off"></div>
-            <div class="field"><label for="plugin-endpoint">数据源 URL</label><input id="plugin-endpoint" type="url" placeholder="https://…" autocomplete="off"></div>
+            <div class="field">
+              <label class="required" for="plugin-endpoint">数据源 URL</label>
+              <div class="input-group">
+                <input id="plugin-endpoint" type="url" placeholder="配置地址" autocomplete="off" required>
+                <button class="button" id="inspect-endpoint" type="button" hidden>检查</button>
+              </div>
+            </div>
             <div class="field"><label class="required" for="plugin-desc">描述</label><textarea id="plugin-desc"></textarea></div>
             <span class="field-help">更新时间将在发布时由服务端自动生成。</span>
             <div class="section-head">
@@ -315,12 +398,13 @@ const template = String.raw`<!doctype html>
         </form>
       </section>
     </main>
+    </div>
   </div>
 
   <dialog id="login-dialog">
     <form class="dialog-body" id="login-form" method="dialog">
       <h2>管理验证</h2>
-      <p>请输入 Worker 中配置的 ADMIN_TOKEN。Token 只保存在当前页面内存，刷新后需要重新输入。</p>
+      <p>请输入 Worker 中配置的 ADMIN_TOKEN。若要轮换密钥，请先在部署平台更新，再回到这里输入新 Token。</p>
       <label for="admin-token">Admin Token</label>
       <input id="admin-token" type="password" autocomplete="current-password" required>
       <p class="notice error" id="login-error" role="alert"></p>
@@ -350,6 +434,7 @@ const template = String.raw`<!doctype html>
       <p id="review-dialog-message"></p>
       <div class="review-meta" id="review-meta"></div>
       <pre class="json-preview" id="review-manifest" aria-label="投稿 Manifest"></pre>
+      <div class="dialog-toolbar"><button class="button" id="review-copy" type="button">复制配置</button></div>
       <div class="field" id="rejection-field" hidden>
         <label for="rejection-reason">拒绝原因</label>
         <textarea id="rejection-reason" maxlength="500" placeholder="请说明需要修改的内容"></textarea>
@@ -362,12 +447,31 @@ const template = String.raw`<!doctype html>
     </div>
   </dialog>
 
+  <dialog id="inspect-dialog">
+    <div class="dialog-body">
+      <h2>发现插件信息</h2>
+      <p class="dialog-meta">已成功解析音源插件脚本元数据，请确认是否填充到表单：</p>
+      <div class="inspect-results">
+        <div class="inspect-item"><span class="inspect-label">名称</span><span class="inspect-val" id="inspect-name"></span></div>
+        <div class="inspect-item"><span class="inspect-label">版本</span><span class="inspect-val" id="inspect-version"></span></div>
+        <div class="inspect-item"><span class="inspect-label">作者</span><span class="inspect-val" id="inspect-author"></span></div>
+        <div class="inspect-item"><span class="inspect-label">支持平台</span><span class="inspect-val" id="inspect-platforms"></span></div>
+        <div class="inspect-item"><span class="inspect-label">描述</span><span class="inspect-val inspect-desc" id="inspect-desc"></span></div>
+      </div>
+      <div class="dialog-actions">
+        <button class="button" id="inspect-cancel" type="button">取消</button>
+        <button class="button primary" id="inspect-fill" type="button">填充到表单</button>
+      </div>
+    </div>
+  </dialog>
+
   <script nonce="__NONCE__">
     const state = {
       token: "", cursor: null, nextCursor: null, history: [], page: 1, items: [],
       editorMode: "form", editorManifest: {}, editingID: null, originalVersion: null,
       pendingDelete: null, reviews: [], pendingReview: null, reviewAction: null,
-      users: [], contributors: []
+      users: [], contributors: [], pluginTypes: [], editingType: null,
+      usersPage: 1, usersTotalPages: 1, activePanel: "reviews"
     };
     const $ = (id) => document.getElementById(id);
     const knownFields = new Set([
@@ -375,18 +479,25 @@ const template = String.raw`<!doctype html>
       "update_time", "desc", "endpoint"
     ]);
     const template = {
-      id: "example.plugin", type: "hot", icon: "https://example.com/icon.png",
+      id: "example.plugin", type: "", icon: "",
       name: "Example Plugin", author: "Author", version: "1.0.0",
-      desc: "Plugin description", endpoint: "https://example.com/data.json"
+      desc: "Plugin description", endpoint: ""
     };
 
     $("login-dialog").showModal();
     $("login-form").addEventListener("submit", async (event) => {
       event.preventDefault();
-      state.token = $("admin-token").value.trim();
-      if (!state.token) return;
+      const nextToken = $("admin-token").value.trim();
+      if (!nextToken) return;
+      const previousToken = state.token;
+      state.token = nextToken;
       const ok = await loadPlugins(true);
-      if (ok) $("login-dialog").close();
+      if (ok) {
+        $("login-dialog").close();
+      } else {
+        state.token = previousToken;
+        if (previousToken) $("connection").textContent = "已连接";
+      }
     });
     $("reauth").addEventListener("click", () => {
       $("admin-token").value = "";
@@ -394,7 +505,20 @@ const template = String.raw`<!doctype html>
       $("login-dialog").showModal();
     });
     $("refresh").addEventListener("click", () => loadPlugins());
+    document.querySelectorAll(".nav-button").forEach((button) => {
+      button.addEventListener("click", () => switchPanel(button.dataset.panel));
+    });
+    $("plugin-type-form").addEventListener("submit", savePluginType);
+    $("cancel-type-edit").addEventListener("click", resetPluginTypeForm);
     $("search-users").addEventListener("click", searchUsers);
+    $("users-previous").addEventListener("click", () => {
+      state.usersPage = Math.max(1, state.usersPage - 1);
+      loadUsers();
+    });
+    $("users-next").addEventListener("click", () => {
+      state.usersPage = Math.min(state.usersTotalPages, state.usersPage + 1);
+      loadUsers();
+    });
     $("user-search").addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
@@ -405,6 +529,13 @@ const template = String.raw`<!doctype html>
     $("form-mode").addEventListener("click", () => setEditorMode("form"));
     $("json-mode").addEventListener("click", () => setEditorMode("json"));
     $("add-custom-field").addEventListener("click", () => appendCustomField("", ""));
+    $("plugin-type").addEventListener("input", updateInspectButtonVisibility);
+    $("plugin-type").addEventListener("change", updateInspectButtonVisibility);
+    $("inspect-endpoint").addEventListener("click", inspectEndpoint);
+    $("inspect-cancel").addEventListener("click", () => {
+      if ($("inspect-dialog").open) $("inspect-dialog").close();
+    });
+    $("inspect-fill").addEventListener("click", fillFromInspection);
     $("cancel-delete").addEventListener("click", () => {
       state.pendingDelete = null;
       $("delete-dialog").close();
@@ -415,6 +546,7 @@ const template = String.raw`<!doctype html>
       $("review-dialog").close();
     });
     $("confirm-review").addEventListener("click", confirmReview);
+    $("review-copy").addEventListener("click", copyReviewManifest);
     $("previous").addEventListener("click", () => {
       state.cursor = state.history.pop() ?? null;
       state.page = Math.max(1, state.page - 1);
@@ -452,6 +584,27 @@ const template = String.raw`<!doctype html>
     });
     $("publish-form").addEventListener("submit", publishPlugin);
 
+    const panelCopy = {
+      reviews: ["待审核投稿", "查看投稿内容并决定是否发布"],
+      plugins: ["已上架插件", "查看市场内容、安装数据及下架插件"],
+      users: ["用户与白名单", "查看贡献情况并管理免审用户"],
+      settings: ["系统设置", "维护低频变动的插件类型配置"]
+    };
+
+    function switchPanel(panel) {
+      if (!panelCopy[panel]) return;
+      state.activePanel = panel;
+      document.querySelectorAll("[data-page]").forEach((section) => {
+        section.hidden = section.dataset.page !== panel;
+      });
+      document.querySelectorAll(".nav-button").forEach((button) => {
+        if (button.dataset.panel === panel) button.setAttribute("aria-current", "page");
+        else button.removeAttribute("aria-current");
+      });
+      $("page-title").textContent = panelCopy[panel][0];
+      $("page-subtitle").textContent = panelCopy[panel][1];
+    }
+
     async function loadPlugins(isLogin = false) {
       setBusy(true);
       try {
@@ -464,7 +617,7 @@ const template = String.raw`<!doctype html>
         state.items = page.items;
         state.nextCursor = page.next_cursor;
         renderRows();
-        await Promise.all([loadReviews(), loadUsers()]);
+        await Promise.all([loadReviews(), loadUsers(), loadPluginTypes()]);
         $("connection").textContent = "已连接";
         $("login-error").textContent = "";
         return true;
@@ -475,6 +628,99 @@ const template = String.raw`<!doctype html>
         return false;
       } finally {
         setBusy(false);
+      }
+    }
+
+    async function loadPluginTypes() {
+      const response = await api("/api/v1/admin/plugin-types");
+      if (!response.ok) throw await responseError(response);
+      state.pluginTypes = (await response.json()).items;
+      const tbody = $("plugin-type-rows");
+      tbody.replaceChildren();
+      $("plugin-types-empty").hidden = state.pluginTypes.length !== 0;
+      for (const type of state.pluginTypes) {
+        const row = document.createElement("tr");
+        row.append(cell(type.name));
+        const value = document.createElement("code");
+        value.textContent = type.value;
+        row.append(cell(value));
+        const actions = document.createElement("td");
+        actions.className = "actions";
+        const edit = document.createElement("button");
+        edit.className = "button"; edit.type = "button"; edit.textContent = "编辑";
+        edit.addEventListener("click", () => editPluginType(type));
+        const remove = document.createElement("button");
+        remove.className = "button danger"; remove.type = "button"; remove.textContent = "删除";
+        remove.addEventListener("click", () => removePluginType(type, remove));
+        actions.append(edit, remove);
+        row.append(actions);
+        tbody.append(row);
+      }
+    }
+
+    function editPluginType(type) {
+      state.editingType = type.value;
+      $("type-value").value = type.value;
+      $("type-value").disabled = true;
+      $("type-name").value = type.name;
+      $("save-plugin-type").textContent = "保存名称";
+      $("cancel-type-edit").hidden = false;
+      $("type-name").focus();
+    }
+
+    function resetPluginTypeForm() {
+      state.editingType = null;
+      $("plugin-type-form").reset();
+      $("type-value").disabled = false;
+      $("save-plugin-type").textContent = "新增类型";
+      $("cancel-type-edit").hidden = true;
+    }
+
+    async function savePluginType(event) {
+      event.preventDefault();
+      const button = $("save-plugin-type");
+      button.disabled = true;
+      $("plugin-type-notice").textContent = "";
+      try {
+        const response = await api("/api/v1/admin/plugin-types", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            value: state.editingType || $("type-value").value.trim(),
+            name: $("type-name").value.trim()
+          })
+        });
+        if (!response.ok) throw await responseError(response);
+        const saved = await response.json();
+        resetPluginTypeForm();
+        await loadPluginTypes();
+        $("plugin-type-notice").textContent = saved.name + "（" + saved.value + "）已保存。";
+        $("plugin-type-notice").className = "notice ok";
+      } catch (error) {
+        $("plugin-type-notice").textContent = error.message;
+        $("plugin-type-notice").className = "notice error";
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function removePluginType(type, button) {
+      if (!confirm("删除插件类型 " + type.name + "（" + type.value + "）？")) return;
+      button.disabled = true;
+      try {
+        const response = await api(
+          "/api/v1/admin/plugin-types/" + encodeURIComponent(type.value),
+          { method: "DELETE" }
+        );
+        if (!response.ok) throw await responseError(response);
+        if (state.editingType === type.value) resetPluginTypeForm();
+        await loadPluginTypes();
+        $("plugin-type-notice").textContent = "插件类型已删除。";
+        $("plugin-type-notice").className = "notice ok";
+      } catch (error) {
+        $("plugin-type-notice").textContent = error.message;
+        $("plugin-type-notice").className = "notice error";
+        button.disabled = false;
       }
     }
 
@@ -517,6 +763,8 @@ const template = String.raw`<!doctype html>
       const url = new URL("/api/v1/admin/users", location.origin);
       const search = $("user-search").value.trim();
       if (search) url.searchParams.set("q", search);
+      url.searchParams.set("page", String(state.usersPage));
+      url.searchParams.set("page_size", "20");
       const [statsResponse, usersResponse] = await Promise.all([
         api("/api/v1/admin/users/stats"),
         api(url)
@@ -524,19 +772,29 @@ const template = String.raw`<!doctype html>
       if (!statsResponse.ok) throw await responseError(statsResponse);
       if (!usersResponse.ok) throw await responseError(usersResponse);
       const stats = await statsResponse.json();
+      const usersPage = await usersResponse.json();
       state.contributors = stats.top_contributors;
-      state.users = (await usersResponse.json()).items;
+      state.users = usersPage.items;
+      state.usersPage = usersPage.page;
+      state.usersTotalPages = usersPage.total_pages;
       $("total-users").textContent = new Intl.NumberFormat().format(stats.total_users);
       $("whitelisted-users").textContent =
         new Intl.NumberFormat().format(stats.whitelisted_users);
+      $("private-plugins").textContent =
+        new Intl.NumberFormat().format(stats.private_plugins ?? 0);
       renderUsers("contributor-rows", state.contributors, false);
       renderUsers("user-rows", state.users, true);
       $("contributors-empty").hidden = state.contributors.length !== 0;
       $("users-empty").hidden = state.users.length !== 0;
+      $("users-page-label").textContent = "第 " + state.usersPage + " / "
+        + state.usersTotalPages + " 页 · 共 " + usersPage.total + " 位用户";
+      $("users-previous").disabled = state.usersPage <= 1;
+      $("users-next").disabled = state.usersPage >= state.usersTotalPages;
     }
 
     async function searchUsers() {
       try {
+        state.usersPage = 1;
         await loadUsers();
         $("user-notice").textContent = "";
       } catch (error) {
@@ -674,6 +932,7 @@ const template = String.raw`<!doctype html>
         + "　最低 iOS：" + (item.minimum_ios_version || "不限")
         + "　最低 tvOS：" + (item.minimum_tvos_version || "不限");
       $("review-manifest").innerHTML = highlightJSON(JSON.stringify(item.manifest, null, 2));
+      $("review-copy").textContent = "复制配置";
       $("rejection-field").hidden = action !== "reject";
       $("rejection-reason").value = "";
       $("review-dialog-error").textContent = "";
@@ -744,10 +1003,21 @@ const template = String.raw`<!doctype html>
         + "　最低 iOS：" + (item.minimum_ios_version || "不限")
         + "　最低 tvOS：" + (item.minimum_tvos_version || "不限");
       $("review-manifest").innerHTML = highlightJSON(JSON.stringify(item.manifest, null, 2));
+      $("review-copy").textContent = "复制配置";
       $("rejection-field").hidden = true;
       $("review-dialog-error").textContent = "";
       $("confirm-review").hidden = true;
       $("review-dialog").showModal();
+    }
+
+    async function copyReviewManifest() {
+      try {
+        await navigator.clipboard.writeText($("review-manifest").textContent);
+        $("review-copy").textContent = "已复制";
+        $("review-dialog-error").textContent = "";
+      } catch {
+        $("review-dialog-error").textContent = "复制失败，请手动选择上方 JSON。";
+      }
     }
 
     function cell(content) {
@@ -845,7 +1115,8 @@ const template = String.raw`<!doctype html>
     function resetEditor() {
       state.editingID = null;
       state.originalVersion = null;
-      populateEditor({ ...template });
+      const defaultType = state.pluginTypes[0]?.value || "";
+      populateEditor({ ...template, type: defaultType });
       setPlatforms(["ios", "tvos"]);
       $("minimum-ios").value = ""; $("minimum-tvos").value = "";
       $("editor-title").textContent = "新建插件";
@@ -854,6 +1125,225 @@ const template = String.raw`<!doctype html>
       showNotice("", "");
       $("plugin-id").focus();
     }
+    let currentInspectData = null;
+
+    function isLuexueType(val) {
+      const v = String(val || "").toLowerCase();
+      return (
+        v === "luoxue" ||
+        v === "luexue" ||
+        v === "lx" ||
+        v.includes("luoxue") ||
+        v.includes("luexue") ||
+        v.includes("洛雪") ||
+        v.includes("六雪") ||
+        v.includes("音源")
+      );
+    }
+
+    function updateInspectButtonVisibility() {
+      const type = $("plugin-type").value;
+      $("inspect-endpoint").hidden = !isLuexueType(type);
+    }
+
+    const KNOWN_PLATFORMS_CLIENT = {
+      wy: "网易云音乐",
+      "163": "网易云音乐",
+      netease: "网易云音乐",
+      tx: "QQ音乐",
+      qq: "QQ音乐",
+      tencent: "QQ音乐",
+      kw: "酷我音乐",
+      kuwo: "酷我音乐",
+      kg: "酷狗音乐",
+      kugou: "酷狗音乐",
+      mg: "咪咕音乐",
+      migu: "咪咕音乐",
+      xm: "虾米音乐",
+      xiami: "虾米音乐",
+      bd: "百度音乐",
+      baidu: "百度音乐",
+      qsvip: "汽水VIP",
+      qishui: "汽水音乐",
+    };
+
+    function runScriptInBrowserSandbox(scriptContent) {
+      if (!scriptContent) return Promise.resolve(null);
+      return new Promise((resolve) => {
+        const iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        iframe.setAttribute("sandbox", "allow-scripts");
+
+        const timer = setTimeout(() => {
+          cleanup();
+          resolve(null);
+        }, 1500);
+
+        function cleanup() {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMessage);
+          if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+        }
+
+        function onMessage(event) {
+          if (event.data && event.data.type === "LX_SOURCES_INITED") {
+            cleanup();
+            resolve(event.data.sources);
+          }
+        }
+
+        window.addEventListener("message", onMessage);
+
+        const safeCode = (scriptContent || "").replace(new RegExp("<" + "/script", "gi"), "<\\/script");
+        const runnerHtml = "<!DOCTYPE html><html><head><scr" + "ipt nonce=\"__NONCE__\">" +
+          "(function() {" +
+          "  var EVENT_NAMES = Object.freeze({" +
+          "    inited: 'inited'," +
+          "    request: 'request'," +
+          "    musicUrl: 'musicUrl'," +
+          "    musicSearch: 'musicSearch'," +
+          "    lyric: 'lyric'," +
+          "    pic: 'pic'," +
+          "    songList: 'songList'" +
+          "  });" +
+          "  var lx = {" +
+          "    EVENT_NAMES: EVENT_NAMES," +
+          "    version: '2.0.0'," +
+          "    env: 'mobile'," +
+          "    currentScriptInfo: {}," +
+          "    send: function(event, data) {" +
+          "      if ((event === 'inited' || event === EVENT_NAMES.inited) && data && data.sources) {" +
+          "        try {" +
+          "          parent.postMessage({ type: 'LX_SOURCES_INITED', sources: data.sources }, '*');" +
+          "        } catch(e) {}" +
+          "      }" +
+          "    }," +
+          "    on: function() {}," +
+          "    request: function(url, opt, cb) {" +
+          "      if (typeof opt === 'function') { cb = opt; opt = {}; }" +
+          "      if (typeof cb === 'function') {" +
+          "        try { cb(null, { statusCode: 200, body: '{}' }, '{}'); } catch(e){}" +
+          "      }" +
+          "    }," +
+          "    utils: {" +
+          "      buffer: {" +
+          "        from: function(str) { return { toString: function() { return String(str); } }; }" +
+          "      }" +
+          "    }" +
+          "  };" +
+          "  window.lx = lx;" +
+          "  globalThis.lx = lx;" +
+          "  window.EVENT_NAMES = EVENT_NAMES;" +
+          "  window.send = lx.send;" +
+          "  window.on = lx.on;" +
+          "  window.request = lx.request;" +
+          "  try {" +
+          "    " + safeCode + "\n" +
+          "  } catch (e) {}" +
+          "})();" +
+          "<" + "/scr" + "ipt></head><body></body></html>";
+
+        iframe.srcdoc = runnerHtml;
+        document.body.appendChild(iframe);
+      });
+    }
+
+    async function inspectEndpoint() {
+      const endpoint = $("plugin-endpoint").value.trim();
+      if (!endpoint) {
+        showNotice("请先输入数据源 URL 后再进行检查。", "error");
+        $("plugin-endpoint").focus();
+        return;
+      }
+      const btn = $("inspect-endpoint");
+      btn.disabled = true;
+      btn.textContent = "检查中…";
+      showNotice("", "");
+      try {
+        const response = await fetch("/api/v1/plugins/inspect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: endpoint })
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.message || "检查脚本失败 (" + response.status + ")");
+        }
+        const data = await response.json();
+
+        // Dynamically capture sources via sandboxed browser execution
+        if (data.script_content) {
+          try {
+            const browserSources = await runScriptInBrowserSandbox(data.script_content);
+            if (browserSources && typeof browserSources === "object") {
+              const clientPlatforms = [];
+              for (const [key, val] of Object.entries(browserSources)) {
+                let pName = null;
+                if (val && typeof val === "object" && typeof val.name === "string") {
+                  pName = val.name.trim();
+                } else if (typeof val === "string") {
+                  pName = val.trim();
+                }
+                if (!pName || pName === key + "音乐" || pName.toLowerCase() === key.toLowerCase()) {
+                  pName = KNOWN_PLATFORMS_CLIENT[key.toLowerCase()] || pName || key;
+                }
+                pName = pName || KNOWN_PLATFORMS_CLIENT[key.toLowerCase()] || key;
+                if (!clientPlatforms.includes(pName)) {
+                  clientPlatforms.push(pName);
+                }
+              }
+              if (clientPlatforms.length > 0) {
+                data.platforms = clientPlatforms;
+              }
+            }
+          } catch {}
+        }
+
+        currentInspectData = data;
+        $("inspect-name").textContent = data.name || "未提供";
+        $("inspect-version").textContent = data.version || "未提供";
+        $("inspect-author").textContent = data.author || "未提供";
+        $("inspect-platforms").textContent = data.platforms && data.platforms.length ? data.platforms.join("、") : "未检测到特定平台";
+        $("inspect-desc").textContent = data.description || "未提供";
+        $("inspect-dialog").showModal();
+      } catch (error) {
+        showNotice("检查失败：" + (error && error.message ? error.message : String(error)), "error");
+        $("notice").scrollIntoView({ behavior: "smooth", block: "nearest" });
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "检查";
+      }
+    }
+
+    function fillFromInspection() {
+      if (currentInspectData) {
+        if (currentInspectData.name) {
+          $("plugin-name").value = currentInspectData.name;
+        }
+        if (currentInspectData.version) {
+          $("plugin-version").value = currentInspectData.version;
+        }
+        if (currentInspectData.author) {
+          $("plugin-author").value = currentInspectData.author;
+        }
+        let fullDesc = "";
+        if (currentInspectData.platforms && currentInspectData.platforms.length) {
+          fullDesc += "支持平台：" + currentInspectData.platforms.join("、");
+        }
+        if (currentInspectData.description) {
+          fullDesc += (fullDesc ? "\n" : "") + currentInspectData.description;
+        }
+        if (fullDesc) {
+          $("plugin-desc").value = fullDesc;
+        }
+        showNotice("已将脚本信息填充至表单。", "ok");
+        if (state.editorMode === "json") {
+          renderJSONPreview(readFormManifest());
+        }
+      }
+      if ($("inspect-dialog").open) $("inspect-dialog").close();
+    }
+
     function populateEditor(manifest) {
       if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
         throw new Error("Manifest 必须是 JSON 对象。");
@@ -869,6 +1359,7 @@ const template = String.raw`<!doctype html>
       $("plugin-desc").value = stringValue(manifest.desc);
       renderCustomFields(manifest);
       renderJSONPreview({ ...manifest, update_time: new Date().toISOString() });
+      updateInspectButtonVisibility();
     }
     function readFormManifest() {
       const manifest = {
@@ -914,6 +1405,7 @@ const template = String.raw`<!doctype html>
         ["name", "plugin-name", "请填写插件名称。"],
         ["author", "plugin-author", "请填写作者。"],
         ["version", "plugin-version", "请填写插件版本。"],
+        ["endpoint", "plugin-endpoint", "请填写数据源 URL。"],
         ["desc", "plugin-desc", "请填写插件描述。"]
       ];
       for (const [key, id, message] of required) {
@@ -1146,6 +1638,8 @@ export function adminPage(): Response {
         `style-src 'nonce-${nonce}'`,
         "connect-src 'self'",
         "img-src 'self' https: data:",
+        "frame-src 'self' data: blob: about:",
+        "child-src 'self' data: blob: about:",
         "base-uri 'none'",
         "form-action 'self'",
         "frame-ancestors 'none'",

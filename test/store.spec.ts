@@ -238,6 +238,99 @@ describe("Plugin Store API", () => {
     expect(response.status).toBe(404);
   });
 
+  it("lets administrators configure plugin type names and values", async () => {
+    const initial = await fetchWorker("https://example.com/api/v1/plugin-types");
+    expect(initial.status).toBe(200);
+    expect(await initial.json()).toMatchObject({
+      items: [expect.objectContaining({ value: "hot", name: "热榜" })],
+    });
+
+    const adminHeaders = {
+      authorization: "Bearer test-admin-token",
+      "content-type": "application/json",
+    };
+    const saved = await fetchWorker("https://example.com/api/v1/admin/plugin-types", {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ value: "podcast", name: "播客" }),
+    });
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toMatchObject({ value: "podcast", name: "播客" });
+
+    const renamed = await fetchWorker("https://example.com/api/v1/admin/plugin-types", {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ value: "podcast", name: "音频播客" }),
+    });
+    expect(renamed.status).toBe(200);
+    expect(await renamed.json()).toMatchObject({ value: "podcast", name: "音频播客" });
+
+    const registration = await authRequest("/api/v1/auth/register", {
+      email: "typed-author@example.com",
+      nick: "TypedAuthor",
+      password: "typed-author-password",
+      password_confirmation: "typed-author-password",
+    });
+    const cookie = sessionCookie(registration);
+    const typedDraft = await fetchWorker(
+      "https://example.com/api/v1/user/plugins/draft",
+      {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({
+          manifest: {
+            ...manifest,
+            type: "podcast",
+            name: "Podcast Plugin",
+            author: "TypedAuthor",
+          },
+        }),
+      },
+    );
+    expect(typedDraft.status).toBe(201);
+
+    const deleteUsed = await fetchWorker(
+      "https://example.com/api/v1/admin/plugin-types/podcast",
+      {
+        method: "DELETE",
+        headers: { authorization: "Bearer test-admin-token" },
+      },
+    );
+    expect(deleteUsed.status).toBe(409);
+    expect(await deleteUsed.json()).toMatchObject({ code: "plugin_type_in_use" });
+
+    expect((await fetchWorker("https://example.com/api/v1/admin/plugin-types", {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ value: "temporary", name: "临时类型" }),
+    })).status).toBe(200);
+    expect((await fetchWorker(
+      "https://example.com/api/v1/admin/plugin-types/temporary",
+      {
+        method: "DELETE",
+        headers: { authorization: "Bearer test-admin-token" },
+      },
+    )).status).toBe(204);
+
+    const invalidDraft = await fetchWorker(
+      "https://example.com/api/v1/user/plugins/draft",
+      {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({
+          manifest: {
+            ...manifest,
+            type: "missing",
+            name: "Invalid Type",
+            author: "TypedAuthor",
+          },
+        }),
+      },
+    );
+    expect(invalidDraft.status).toBe(400);
+    expect(await invalidDraft.json()).toMatchObject({ code: "invalid_plugin_type" });
+  });
+
   it("reports user contributions and lets whitelisted users publish without review", async () => {
     const registration = await authRequest("/api/v1/auth/register", {
       email: "trusted-author@example.com",
@@ -258,6 +351,10 @@ describe("Plugin Store API", () => {
     );
     expect(adminUsers.status).toBe(200);
     expect(await adminUsers.json()).toMatchObject({
+      page: 1,
+      page_size: 20,
+      total: 1,
+      total_pages: 1,
       items: [{
         id: account.user.id,
         email: "trusted-author@example.com",
@@ -611,6 +708,147 @@ describe("Plugin Store API", () => {
     expect((await fetchWorker(
       `https://example.com/api/v1/plugins/${draft.plugin_id}/manifest`,
     )).status).toBe(404);
+  });
+
+  it("keeps private plugins out of review and makes visibility immutable", async () => {
+    const registration = await authRequest("/api/v1/auth/register", {
+      email: "private-author@example.com",
+      nick: "PrivateAuthor",
+      password: "private-author-password",
+      password_confirmation: "private-author-password",
+    });
+    expect(registration.status).toBe(201);
+    const cookie = sessionCookie(registration);
+    const privateManifest = {
+      ...manifest,
+      author: "PrivateAuthor",
+      name: "Private Manual Import",
+    };
+
+    const saved = await fetchWorker("https://example.com/api/v1/user/plugins/draft", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ manifest: privateManifest, visibility: "private" }),
+    });
+    expect(saved.status).toBe(201);
+    const privatePlugin = await saved.json<{
+      plugin_id: string;
+      status: string;
+      visibility: string;
+    }>();
+    expect(privatePlugin).toMatchObject({ status: "private", visibility: "private" });
+    expect((await getFilteredCatalog({ q: privatePlugin.plugin_id })).total).toBe(0);
+
+    const listed = await fetchWorker(
+      "https://example.com/api/v1/user/submissions",
+      { headers: { cookie } },
+    ).then((response) => response.json<{
+      items: Array<{
+        plugin_id: string;
+        status: string;
+        visibility: string;
+        manifest: Record<string, unknown>;
+      }>;
+    }>());
+    expect(listed.items).toContainEqual(expect.objectContaining({
+      plugin_id: privatePlugin.plugin_id,
+      status: "private",
+      visibility: "private",
+      manifest: expect.objectContaining({ name: "Private Manual Import" }),
+    }));
+
+    const bulkSubmit = await fetchWorker(
+      "https://example.com/api/v1/user/plugins/submit-drafts",
+      { method: "POST", headers: { cookie } },
+    );
+    expect(bulkSubmit.status).toBe(202);
+    expect(await bulkSubmit.json()).toMatchObject({ items: [], submitted_count: 0 });
+
+    const privateBody = {
+      manifest: {
+        ...privateManifest,
+        id: privatePlugin.plugin_id,
+      },
+      visibility: "private",
+    };
+    const directSubmit = await fetchWorker(
+      `https://example.com/api/v1/user/plugins/${privatePlugin.plugin_id}`,
+      {
+        method: "PUT",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify(privateBody),
+      },
+    );
+    expect(directSubmit.status).toBe(409);
+    expect(await directSubmit.json()).toMatchObject({
+      code: "private_plugin_cannot_be_submitted",
+    });
+
+    const makePublic = await fetchWorker(
+      `https://example.com/api/v1/user/plugins/${privatePlugin.plugin_id}/draft`,
+      {
+        method: "PUT",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ ...privateBody, visibility: "public" }),
+      },
+    );
+    expect(makePublic.status).toBe(409);
+    expect(await makePublic.json()).toMatchObject({ code: "visibility_immutable" });
+
+    const publicSaved = await fetchWorker(
+      "https://example.com/api/v1/user/plugins/draft",
+      {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({
+          manifest: { ...privateManifest, name: "Public Fixed Visibility" },
+          visibility: "public",
+        }),
+      },
+    ).then((response) => response.json<{ plugin_id: string }>());
+    const makePrivate = await fetchWorker(
+      `https://example.com/api/v1/user/plugins/${publicSaved.plugin_id}/draft`,
+      {
+        method: "PUT",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({
+          manifest: {
+            ...privateManifest,
+            id: publicSaved.plugin_id,
+            name: "Public Fixed Visibility",
+          },
+          visibility: "private",
+        }),
+      },
+    );
+    expect(makePrivate.status).toBe(409);
+    expect(await makePrivate.json()).toMatchObject({ code: "visibility_immutable" });
+
+    const submittedPublicDrafts = await fetchWorker(
+      "https://example.com/api/v1/user/plugins/submit-drafts",
+      { method: "POST", headers: { cookie } },
+    );
+    expect(submittedPublicDrafts.status).toBe(202);
+    expect(await submittedPublicDrafts.json()).toMatchObject({ submitted_count: 1 });
+    const makeSubmittedPluginPrivate = await fetchWorker(
+      `https://example.com/api/v1/user/plugins/${publicSaved.plugin_id}/draft`,
+      {
+        method: "PUT",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({
+          manifest: {
+            ...privateManifest,
+            id: publicSaved.plugin_id,
+            name: "Public Fixed Visibility",
+          },
+          visibility: "private",
+        }),
+      },
+    );
+    expect(makeSubmittedPluginPrivate.status).toBe(409);
+    expect(await makeSubmittedPluginPrivate.json()).toMatchObject({
+      code: "visibility_immutable",
+    });
   });
 
   it("enforces update invariants, stamps update time, and unpublishes plugins", async () => {
@@ -983,6 +1221,13 @@ describe("Plugin Store API", () => {
     expect(html).toContain('id="review-manifest"');
     expect(html).toContain("接受并发布");
     expect(html).toContain("拒绝原因");
+    expect(html).toContain("插件类型");
+    expect(html).toContain('id="plugin-type-form"');
+    expect(html).toContain('id="admin-sidebar"');
+    expect(html).toContain('data-panel="settings"');
+    expect(html).toContain('id="review-copy"');
+    expect(html).toContain('id="users-previous"');
+    expect(html).toContain('id="users-next"');
 
     const submitPage = await fetchWorker("https://example.com/submit");
     expect(submitPage.status).toBe(200);
@@ -993,7 +1238,7 @@ describe("Plugin Store API", () => {
     expect(submitHTML).not.toContain('href="/admin"');
     expect(submitHTML).toContain("由系统自动生成，无法修改");
     expect(submitHTML).toContain("提交成功，插件正在等待管理员审核");
-    expect(submitHTML).toContain("更多");
+    expect(submitHTML).toContain("插件菜单");
     expect(submitHTML).toContain("删除插件");
     expect(submitHTML).toContain("保存草稿");
     expect(submitHTML).toContain("批量导入 JSON");
@@ -1004,6 +1249,17 @@ describe("Plugin Store API", () => {
     expect(submitHTML).toContain("plugin-name");
     expect(submitHTML).toContain("plugin-id");
     expect(submitHTML).toContain("market-dot");
+    expect(submitHTML).toContain("private-lock");
+    expect(submitHTML).toContain('id="plugin-private"');
+    expect(submitHTML).toContain("查看配置");
+    expect(submitHTML).toContain("复制配置");
+    expect(submitHTML).toContain("function highlightJSON");
+    expect(submitHTML).toContain("用作模板");
+    expect(submitHTML).toContain("function useAsTemplate");
+    expect(submitHTML).toContain('<select id="plugin-type"');
+    expect(submitHTML).toContain('id="plugin-action-menu"');
+    expect(submitHTML).not.toContain('id="plugin-menu-dialog"');
+    expect(submitHTML).toContain('class="notice list-footer"');
     expect(submitHTML).not.toContain("<th>通过版本</th>");
 
     const registerPage = await fetchWorker("https://example.com/register");
