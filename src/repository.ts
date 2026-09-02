@@ -32,6 +32,13 @@ interface PublishedPluginRow {
   manifest_json: string;
 }
 
+export interface PluginSyncRow extends PublishedPluginRow {
+  supports_ios: number;
+  supports_tvos: number;
+  minimum_ios_version: string | null;
+  minimum_tvos_version: string | null;
+}
+
 interface UpdateCheckRow extends PublishedPluginRow {
   id: string;
   manifest_sha256: string;
@@ -77,6 +84,7 @@ interface AdminUserRow {
   created_at: string;
   is_whitelisted: number;
   contribution_count: number;
+  contribution_points: number;
 }
 
 export interface PluginSubmissionRow {
@@ -98,6 +106,14 @@ export interface PluginSubmissionRow {
   cancelled_at: string | null;
   published_version: string | null;
   approved_version: string | null;
+}
+
+interface UserSubmissionRow extends PluginSubmissionRow {
+  published_manifest_json: string | null;
+  published_supports_ios: number | null;
+  published_supports_tvos: number | null;
+  published_minimum_ios_version: string | null;
+  published_minimum_tvos_version: string | null;
 }
 
 type SubmissionItem = ReturnType<typeof toSubmissionItem>;
@@ -466,6 +482,34 @@ export async function getLatestPluginRelease(
     ORDER BY published_at DESC, id DESC
     LIMIT 1
   `).bind(pluginID).first<PublishedPluginRow>();
+}
+
+export async function getPluginForSync(
+  db: D1Database,
+  pluginID: string,
+): Promise<PluginSyncRow | null> {
+  return db.prepare(`
+    SELECT r.version AS latest_version, r.manifest_json,
+           r.supports_ios, r.supports_tvos,
+           r.minimum_ios_version, r.minimum_tvos_version
+    FROM plugins p
+    JOIN plugin_releases r ON r.id = p.published_release_id
+    WHERE p.id = ?
+  `).bind(pluginID).first<PluginSyncRow>();
+}
+
+export async function getPluginNotificationRecipient(
+  db: D1Database,
+  pluginID: string,
+): Promise<{ email: string; nick: string; name: string; version: string } | null> {
+  return db.prepare(`
+    SELECT u.email, u.nick, p.name, r.version
+    FROM plugins p
+    JOIN plugin_owners o ON o.plugin_id = p.id
+    JOIN users u ON u.id = o.user_id
+    JOIN plugin_releases r ON r.id = p.published_release_id
+    WHERE p.id = ?
+  `).bind(pluginID).first<{ email: string; nick: string; name: string; version: string }>();
 }
 
 export async function unpublishPlugin(
@@ -867,6 +911,11 @@ export async function listUserSubmissions(db: D1Database, userID: string) {
            s.minimum_ios_version, s.minimum_tvos_version, s.status,
            s.rejection_reason, s.submitted_at, s.reviewed_at, s.cancelled_at,
            current_release.version AS published_version,
+           current_release.manifest_json AS published_manifest_json,
+           current_release.supports_ios AS published_supports_ios,
+           current_release.supports_tvos AS published_supports_tvos,
+           current_release.minimum_ios_version AS published_minimum_ios_version,
+           current_release.minimum_tvos_version AS published_minimum_tvos_version,
            (
              SELECT release.version
              FROM plugin_releases release
@@ -881,7 +930,7 @@ export async function listUserSubmissions(db: D1Database, userID: string) {
     WHERE s.user_id = ?
     ORDER BY s.submitted_at DESC
     LIMIT 100
-  `).bind(userID).all<PluginSubmissionRow>();
+  `).bind(userID).all<UserSubmissionRow>();
   const plugins = new Map<string, UserPluginItem>();
   for (const row of result.results) {
     const submission = toSubmissionItem(row);
@@ -889,7 +938,20 @@ export async function listUserSubmissions(db: D1Database, userID: string) {
     if (plugin) {
       plugin.history.push(submission);
     } else {
-      plugins.set(row.plugin_id, { ...submission, history: [submission] });
+      const current = row.status === "accepted" && row.published_manifest_json !== null
+        ? {
+            ...submission,
+            version: row.published_version ?? submission.version,
+            manifest: JSON.parse(row.published_manifest_json) as unknown,
+            platforms: [
+              ...(row.published_supports_ios === 1 ? ["ios"] : []),
+              ...(row.published_supports_tvos === 1 ? ["tvos"] : []),
+            ],
+            minimum_ios_version: row.published_minimum_ios_version,
+            minimum_tvos_version: row.published_minimum_tvos_version,
+          }
+        : submission;
+      plugins.set(row.plugin_id, { ...current, history: [submission] });
     }
   }
   const drafts = await db.prepare(`
@@ -937,10 +999,14 @@ export async function listUserSubmissions(db: D1Database, userID: string) {
       history: existing?.history ?? [],
     });
   }
+  const settings = await db.prepare(
+    "SELECT linked_plugin_id FROM tvbox_settings WHERE id = 1",
+  ).first<{ linked_plugin_id: string | null }>();
+  const linkedPluginID = settings?.linked_plugin_id ?? null;
   return {
-    items: [...plugins.values()].sort(
-      (lhs, rhs) => rhs.submitted_at.localeCompare(lhs.submitted_at),
-    ),
+    items: [...plugins.values()]
+      .map((item) => ({ ...item, linked: item.plugin_id === linkedPluginID }))
+      .sort((lhs, rhs) => rhs.submitted_at.localeCompare(lhs.submitted_at)),
   };
 }
 
@@ -987,9 +1053,57 @@ export async function acceptPluginSubmission(
     SET status = 'accepted', rejection_reason = NULL, reviewed_at = ?
     WHERE id = ? AND status = 'pending'
   `).bind(new Date().toISOString(), submissionID);
+  // Contribution points are awarded only for a plugin's first public release.
+  // A private draft cannot normally reach this function, but keep the guard here
+  // so future callers cannot accidentally award points for private submissions.
+  const awardContribution = db.prepare(`
+    UPDATE users
+    SET contribution_points = contribution_points + 1
+    WHERE id = (
+      SELECT user_id FROM plugin_submissions
+      WHERE id = ? AND status = 'pending'
+    )
+      AND ? != 'private'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM plugin_releases r
+        JOIN plugin_submissions s ON s.plugin_id = r.plugin_id
+        WHERE s.id = ?
+      )
+  `).bind(submissionID, request.visibility ?? "public", submissionID);
   await db.batch([
+    awardContribution,
     ...buildPublishStatements(db, request, metadata, manifestJSON, checksum),
     markAccepted,
+  ]);
+}
+
+export async function publishLinkedPluginRelease(
+  db: D1Database,
+  request: PublishRequest,
+  metadata: PluginManifestMetadata,
+  manifestJSON: string,
+  checksum: string,
+  syncedAt: string,
+): Promise<void> {
+  const platforms = new Set(request.platforms ?? ["ios", "tvos"]);
+  const overwritePublicDraft = db.prepare(`
+    UPDATE plugin_drafts
+    SET manifest_json = ?, supports_ios = ?, supports_tvos = ?,
+        minimum_ios_version = ?, minimum_tvos_version = ?, saved_at = ?
+    WHERE plugin_id = ? AND is_private = 0
+  `).bind(
+    manifestJSON,
+    platforms.has("ios") ? 1 : 0,
+    platforms.has("tvos") ? 1 : 0,
+    request.minimum_ios_version ?? null,
+    request.minimum_tvos_version ?? null,
+    syncedAt,
+    metadata.id,
+  );
+  await db.batch([
+    ...buildPublishStatements(db, request, metadata, manifestJSON, checksum),
+    overwritePublicDraft,
   ]);
 }
 
@@ -1207,6 +1321,7 @@ function toSubmissionItem(row: PluginSubmissionRow) {
 function adminUserSelect(): string {
   return `
     SELECT u.id, u.email, u.nick, u.created_at, u.is_whitelisted,
+           u.contribution_points,
            (
              SELECT COUNT(DISTINCT submission.plugin_id)
              FROM plugin_submissions submission
@@ -1224,6 +1339,7 @@ function toAdminUser(row: AdminUserRow) {
     created_at: row.created_at,
     whitelisted: row.is_whitelisted === 1,
     contribution_count: row.contribution_count,
+    contribution_points: row.contribution_points,
   };
 }
 

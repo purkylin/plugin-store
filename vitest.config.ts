@@ -11,6 +11,9 @@ export default defineConfig({
         miniflare: {
           bindings: {
             ADMIN_TOKEN: "test-admin-token",
+            RESEND_API_KEY: "",
+            RESEND_FROM_EMAIL: "",
+            ADMIN_NOTIFY_EMAIL: "",
             TEST_MIGRATIONS: migrations,
           },
         },

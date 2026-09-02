@@ -3,6 +3,9 @@
   "name": "hawk-plugin-store",
   "main": "src/index.ts",
   "compatibility_date": "2026-07-24",
+  "vars": {
+    "PUBLIC_ASSET_BASE_URL": "https://assets.example.com"
+  },
   "observability": {
     "enabled": true
   },
@@ -12,6 +15,12 @@
       "database_name": "hawk-plugin-store",
       "migrations_dir": "migrations",
       "database_id": "60583fe6-96af-481b-b3df-2157fc8b21f3"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "STORAGE",
+      "bucket_name": "storage"
     }
   ]
 }

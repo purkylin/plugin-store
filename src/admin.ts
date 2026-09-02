@@ -55,6 +55,8 @@ const template = String.raw`<!doctype html>
     .sidebar-footer { display: grid; gap: 12px; margin-top: auto; padding-top: 20px; }
     .sidebar-footer .button { width: 100%; }
     .content { min-width: 0; }
+    .content > section, .content > main { margin-bottom: 20px; }
+    .content > section:last-child, .content > main:last-child { margin-bottom: 0; }
     header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 8px 0 24px; }
     .page-panel { display: grid; gap: 20px; }
     .brand { display: flex; align-items: center; gap: 14px; }
@@ -79,6 +81,73 @@ const template = String.raw`<!doctype html>
     .type-form { display: grid; grid-template-columns: minmax(160px,.7fr) minmax(220px,1fr) auto; gap: 12px; align-items: end; }
     .type-form .field { margin: 0; }
     .type-form .actions { padding-bottom: 1px; }
+    .type-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+      gap: 10px;
+      padding: 12px 20px 20px;
+    }
+    .type-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(2, 10, 19, .28);
+    }
+    .type-item-main { min-width: 0; }
+    .type-item-name {
+      display: block;
+      overflow: hidden;
+      color: var(--text);
+      font-weight: 700;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .type-item-value {
+      display: block;
+      margin-top: 2px;
+      overflow-wrap: anywhere;
+      color: var(--muted);
+      font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .more-trigger {
+      min-width: 34px;
+      padding: 7px 9px;
+      font-size: 18px;
+      line-height: 1;
+      letter-spacing: 2px;
+    }
+    .more-menu {
+      position: fixed;
+      z-index: 70;
+      min-width: 130px;
+      padding: 6px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel-strong);
+      box-shadow: 0 16px 38px rgba(0, 0, 0, .35);
+    }
+    .more-menu button {
+      display: block;
+      width: 100%;
+      padding: 8px 10px;
+      border: 0;
+      border-radius: 8px;
+      color: var(--text);
+      background: transparent;
+      text-align: left;
+    }
+    .more-menu button:hover { background: rgba(108, 169, 255, .1); }
+    .more-menu button.danger { color: #ffc3cb; }
+    .email-setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0; }
+    #email-settings-form { padding: 14px 20px; border-bottom: 1px solid var(--line); }
+    .email-setting .checks { padding: 0; }
+    .email-setting form { display: flex; align-items: center; gap: 14px; padding: 0; }
+    .email-setting .button { padding: 7px 11px; }
     .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 180px)); gap: 12px; padding: 20px; }
     .metric { padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(2, 10, 19, .3); }
     .metric strong { display: block; font-size: 26px; line-height: 1.2; }
@@ -108,10 +177,24 @@ const template = String.raw`<!doctype html>
     tbody tr:hover { background: rgba(108, 169, 255, .055); }
     tbody tr:last-child td { border-bottom: 0; }
     .plugin-name { font-weight: 700; }
+    .plugin-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .plugin-identity > div:last-child { min-width: 0; }
+    .plugin-identity .plugin-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .plugin-icon, .plugin-icon-fallback { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px; }
+    .plugin-icon { display: block; object-fit: cover; background: rgba(108, 169, 255, .1); }
+    .plugin-icon-fallback { display: grid; place-items: center; color: var(--blue); background: rgba(108, 169, 255, .12); font-size: 17px; }
     .plugin-id { display: block; color: var(--muted); font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
     .badge { display: inline-flex; padding: 3px 8px; border-radius: 99px; margin-right: 4px; color: #bfe2ff; background: rgba(87, 157, 230, .14); font-size: 11px; }
     .empty { padding: 56px 24px; color: var(--muted); text-align: center; }
     .pager { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+    .page-numbers { display: flex; align-items: center; justify-content: center; gap: 4px; flex: 1; }
+    .page-number { min-width: 32px; padding: 7px 8px; border: 1px solid transparent; border-radius: 8px; color: var(--muted); background: transparent; }
+    .page-number:hover { border-color: var(--line); color: var(--text); }
+    .page-number.active { border-color: rgba(108,169,255,.35); color: var(--text); background: rgba(108,169,255,.15); }
+    .page-ellipsis { padding: 0 3px; color: var(--muted); }
+    .toast { position: fixed; z-index: 80; right: 24px; bottom: 24px; max-width: min(420px, calc(100% - 48px)); padding: 12px 16px; border: 1px solid rgba(85,214,190,.35); border-radius: 12px; color: var(--text); background: #12352f; box-shadow: 0 16px 38px rgba(0,0,0,.35); opacity: 0; transform: translateY(12px); pointer-events: none; transition: opacity .18s ease, transform .18s ease; }
+    .toast.visible { opacity: 1; transform: translateY(0); }
+    .toast.error { border-color: rgba(255,125,141,.38); background: #3a1d2a; }
     form { padding: 20px; }
     .field { margin-bottom: 16px; }
     label { display: block; color: #c3d6e4; font-size: 12px; font-weight: 700; margin-bottom: 7px; }
@@ -143,6 +226,10 @@ const template = String.raw`<!doctype html>
       background: transparent; font-size: 13px; font-weight: 700;
     }
     .editor-tab[aria-selected="true"] { color: var(--text); background: rgba(108, 169, 255, .15); }
+    .resource-tabs-card { padding: 10px; }
+    .resource-tabs-card .editor-tabs { margin: 0; }
+    .plugin-tabs-card { padding: 10px; }
+    .plugin-tabs-card .editor-tabs { margin: 0; }
     .field-help { display: block; color: var(--muted); font-size: 11px; margin-top: 5px; }
     .required::after { content: " *"; color: var(--danger); }
     .input-group { display: flex; gap: 8px; align-items: center; }
@@ -222,8 +309,9 @@ const template = String.raw`<!doctype html>
         <div><h2>Plugin Store</h2><p class="subtitle">管理后台</p></div>
       </div>
       <nav class="sidebar-nav" aria-label="后台导航">
-        <button class="nav-button" type="button" data-panel="reviews" aria-current="page"><span class="nav-icon">◎</span>待审核</button>
-        <button class="nav-button" type="button" data-panel="plugins"><span class="nav-icon">◇</span>已上架插件</button>
+        <button class="nav-button" type="button" data-panel="plugins" aria-current="page"><span class="nav-icon">◇</span>插件</button>
+        <button class="nav-button" type="button" data-panel="resources"><span class="nav-icon">⇧</span>Push</button>
+        <button class="nav-button" type="button" data-panel="tvbox"><span class="nav-icon">{ }</span>TVBox 配置</button>
         <button class="nav-button" type="button" data-panel="users"><span class="nav-icon">♙</span>用户与白名单</button>
         <button class="nav-button" type="button" data-panel="settings"><span class="nav-icon">⚙</span>系统设置</button>
       </nav>
@@ -234,9 +322,16 @@ const template = String.raw`<!doctype html>
     </aside>
     <div class="content">
     <header>
-      <div><h1 id="page-title">待审核投稿</h1><p class="subtitle" id="page-subtitle">查看投稿内容并决定是否发布</p></div>
+      <div><h1 id="page-title">插件</h1><p class="subtitle" id="page-subtitle">审核投稿并管理已合并插件</p></div>
       <button class="button" id="refresh" type="button">刷新数据</button>
     </header>
+
+    <section class="card type-card" data-page="settings" aria-labelledby="email-title" hidden>
+      <div class="card-head">
+        <div><h2 id="email-title">邮件通知</h2><p class="subtitle">控制插件和 Push 的 Resend 邮件</p></div>
+      </div>
+      <form id="email-settings-form"><div class="email-setting"><div class="checks"><label><input id="email-enabled" type="checkbox"> 开启邮件通知</label></div><button class="button primary" type="submit">保存</button></div></form>
+    </section>
 
     <section class="card type-card" data-page="settings" aria-labelledby="types-title" hidden>
       <div class="card-head">
@@ -247,14 +342,8 @@ const template = String.raw`<!doctype html>
         <div class="field"><label class="required" for="type-name">显示名称</label><input id="type-name" maxlength="60" placeholder="例如 热榜" required></div>
         <div class="actions"><button class="button" id="cancel-type-edit" type="button" hidden>取消</button><button class="button primary" id="save-plugin-type" type="submit">新增类型</button></div>
       </form>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>显示名称</th><th>Value</th><th></th></tr></thead>
-          <tbody id="plugin-type-rows"></tbody>
-        </table>
-        <div class="empty" id="plugin-types-empty" hidden>尚未配置插件类型。</div>
-      </div>
-      <p class="notice" id="plugin-type-notice" role="status"></p>
+      <div class="type-grid" id="plugin-type-grid"></div>
+      <div class="empty" id="plugin-types-empty" hidden>尚未配置插件类型。</div>
     </section>
 
     <section class="card user-card" data-page="users" aria-labelledby="users-title" hidden>
@@ -271,7 +360,7 @@ const template = String.raw`<!doctype html>
           <div class="user-section-head"><h3>贡献用户 Top 5</h3><span class="subtitle">按审核通过的插件数</span></div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>用户</th><th>贡献插件</th><th>白名单</th></tr></thead>
+              <thead><tr><th>用户</th><th>贡献插件</th><th>贡献值</th><th>白名单</th></tr></thead>
               <tbody id="contributor-rows"></tbody>
             </table>
             <div class="empty" id="contributors-empty" hidden>还没有用户贡献插件。</div>
@@ -287,7 +376,7 @@ const template = String.raw`<!doctype html>
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>用户</th><th>贡献插件</th><th></th></tr></thead>
+            <thead><tr><th>用户</th><th>贡献插件</th><th>贡献值</th><th></th></tr></thead>
               <tbody id="user-rows"></tbody>
             </table>
             <div class="empty" id="users-empty" hidden>没有匹配的用户。</div>
@@ -299,10 +388,16 @@ const template = String.raw`<!doctype html>
           </div>
         </section>
       </div>
-      <p class="notice" id="user-notice" role="status"></p>
     </section>
 
-    <section class="card review-card" data-page="reviews" aria-labelledby="reviews-title">
+    <section class="card plugin-tabs-card" data-page="plugins" aria-label="插件管理">
+      <div class="editor-tabs" role="tablist" aria-label="插件管理">
+        <button class="editor-tab" id="plugin-pending-tab" type="button" role="tab" aria-selected="true" aria-controls="plugin-pending-page">待审核投稿</button>
+        <button class="editor-tab" id="plugin-published-tab" type="button" role="tab" aria-selected="false" aria-controls="plugin-published-page">已合并插件</button>
+      </div>
+    </section>
+
+    <section class="card review-card" data-page="plugins" data-plugin-page="pending" id="plugin-pending-page" aria-labelledby="reviews-title">
       <div class="card-head">
         <div><h2 id="reviews-title">待审核投稿</h2><p class="subtitle" id="review-summary">验证后载入</p></div>
       </div>
@@ -313,20 +408,42 @@ const template = String.raw`<!doctype html>
         </table>
         <div class="empty" id="review-empty" hidden>当前没有等待审核的投稿。</div>
       </div>
-      <p class="notice" id="review-notice" role="status"></p>
     </section>
 
-    <main class="layout" id="workspace" data-page="plugins" hidden>
+    <section class="card resource-tabs-card" data-page="resources" hidden>
+      <div class="editor-tabs" role="tablist" aria-label="Push 管理">
+        <button class="editor-tab" id="resource-pending-tab" type="button" role="tab" aria-selected="true">待处理</button>
+        <button class="editor-tab" id="resource-list-tab" type="button" role="tab" aria-selected="false">资源列表</button>
+      </div>
+    </section>
+
+    <section class="card review-card" data-page="resources" data-resource-page="pending" hidden>
+      <div class="card-head"><div><h2>待处理资源 Push</h2><p class="subtitle" id="push-review-summary">验证后载入</p></div></div>
+      <div class="table-wrap"><table><thead><tr><th>资源</th><th>类型</th><th>用户</th><th>备注</th><th>提交时间</th><th></th></tr></thead><tbody id="push-review-rows"></tbody></table><div class="empty" id="push-review-empty">当前没有等待处理的 Push。</div></div>
+    </section>
+
+    <section class="card" data-page="resources" data-resource-page="list" hidden>
+      <div class="card-head"><div><h2>PY / CMS 资源</h2><p class="subtitle">接受后默认启用；停用或更新后需重新生成配置</p></div><div class="actions"><select id="resource-type-filter"><option value="all">全部类型</option><option value="py">Python</option><option value="cms">CMS</option></select><select id="resource-status-filter"><option value="all">全部状态</option><option value="enabled">已启用</option><option value="disabled">已停用</option></select><select id="resource-sort"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="name_asc">名称 A-Z</option><option value="name_desc">名称 Z-A</option></select></div></div>
+      <div class="table-wrap"><table><thead><tr><th>资源</th><th>类型</th><th>状态</th><th>配置状态</th><th>更新时间</th><th></th></tr></thead><tbody id="resource-rows"></tbody></table><div class="empty" id="resource-empty">没有匹配的资源。</div></div>
+      <div class="pager" id="resources-pager"><button class="button" id="resources-previous" type="button">上一页</button><div class="page-numbers" id="resources-pagination" aria-label="资源分页"></div><button class="button" id="resources-next" type="button">下一页</button></div>
+    </section>
+
+    <section class="card" data-page="tvbox" hidden>
+      <div class="card-head"><div><h2>TVBox 配置</h2><p class="subtitle">保存模板后，生成时仅替换 sites 字段</p></div></div>
+      <form id="tvbox-form"><div class="field"><label class="required" for="tvbox-template">配置模板 JSON</label><textarea id="tvbox-template" style="min-height:360px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"></textarea></div><div class="field"><label for="tvbox-plugin-id">关联插件 ID</label><input id="tvbox-plugin-id" placeholder="可选，保存一次后自动沿用"><span class="field-help">配置内容变化时自动更新这个已上架插件的 endpoint 和补丁版本。</span></div><div class="form-actions"><span class="subtitle" id="tvbox-status">尚未载入</span><div class="actions"><button class="button" id="tvbox-retry" type="button">重试插件同步</button><button class="button" id="tvbox-generate" type="button">生成配置</button><button class="button primary" type="submit">保存设置</button></div></div><p class="notice" id="tvbox-notice"></p></form>
+    </section>
+
+    <main class="layout" id="workspace" data-page="plugins" data-plugin-page="published" hidden>
       <section class="card" aria-labelledby="plugins-title">
         <div class="card-head">
-          <div><h2 id="plugins-title">已上架插件</h2><p class="subtitle" id="result-summary">—</p></div>
+          <div><h2 id="plugins-title">已合并插件</h2><p class="subtitle" id="result-summary">—</p></div>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>插件</th><th>作者</th><th>版本</th><th>平台</th><th>安装数</th><th></th></tr></thead>
+            <thead><tr><th>插件</th><th>类型</th><th>作者</th><th>版本</th><th>平台</th><th>安装数</th><th></th></tr></thead>
             <tbody id="plugin-rows"></tbody>
           </table>
-          <div class="empty" id="empty" hidden>还没有审核通过的插件。</div>
+          <div class="empty" id="empty" hidden>还没有合并的插件。</div>
         </div>
         <div class="pager">
           <button class="button" id="previous" type="button" disabled>上一页</button>
@@ -400,6 +517,7 @@ const template = String.raw`<!doctype html>
     </main>
     </div>
   </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <dialog id="login-dialog">
     <form class="dialog-body" id="login-form" method="dialog">
@@ -471,7 +589,9 @@ const template = String.raw`<!doctype html>
       editorMode: "form", editorManifest: {}, editingID: null, originalVersion: null,
       pendingDelete: null, reviews: [], pendingReview: null, reviewAction: null,
       users: [], contributors: [], pluginTypes: [], editingType: null,
-      usersPage: 1, usersTotalPages: 1, activePanel: "reviews"
+      usersPage: 1, usersTotalPages: 1, activePanel: "plugins", pluginTab: "pending",
+      resourcePushes: [], resourcesPage: 1, resourcesTotalPages: 1, resourceTab: "pending",
+      typeMenu: null, typeMenuTrigger: null
     };
     const $ = (id) => document.getElementById(id);
     const knownFields = new Set([
@@ -484,7 +604,14 @@ const template = String.raw`<!doctype html>
       desc: "Plugin description", endpoint: ""
     };
 
-    $("login-dialog").showModal();
+    const savedAdminToken = getStoredAdminToken();
+    if (savedAdminToken) {
+      state.token = savedAdminToken;
+      $("admin-token").value = savedAdminToken;
+      restoreAdminSession();
+    } else {
+      $("login-dialog").showModal();
+    }
     $("login-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       const nextToken = $("admin-token").value.trim();
@@ -493,6 +620,7 @@ const template = String.raw`<!doctype html>
       state.token = nextToken;
       const ok = await loadPlugins(true);
       if (ok) {
+        storeAdminToken(nextToken);
         $("login-dialog").close();
       } else {
         state.token = previousToken;
@@ -500,16 +628,62 @@ const template = String.raw`<!doctype html>
       }
     });
     $("reauth").addEventListener("click", () => {
+      clearStoredAdminToken();
       $("admin-token").value = "";
       $("login-error").textContent = "";
       $("login-dialog").showModal();
     });
+
+    async function restoreAdminSession() {
+      const ok = await loadPlugins(true);
+      if (ok) return;
+      clearStoredAdminToken();
+      state.token = "";
+      $("admin-token").value = "";
+      if (!$("login-dialog").open) $("login-dialog").showModal();
+    }
+
+    function getStoredAdminToken() {
+      try { return sessionStorage.getItem("hawk_admin_token") || ""; }
+      catch { return ""; }
+    }
+
+    function storeAdminToken(token) {
+      try { sessionStorage.setItem("hawk_admin_token", token); }
+      catch {}
+    }
+
+    function clearStoredAdminToken() {
+      try { sessionStorage.removeItem("hawk_admin_token"); }
+      catch {}
+    }
     $("refresh").addEventListener("click", () => loadPlugins());
+    $("plugin-pending-tab").addEventListener("click", () => switchPluginTab("pending"));
+    $("plugin-published-tab").addEventListener("click", () => switchPluginTab("published"));
+    $("resource-pending-tab").addEventListener("click", () => switchResourceTab("pending"));
+    $("resource-list-tab").addEventListener("click", () => switchResourceTab("list"));
+    ["resource-type-filter","resource-status-filter","resource-sort"].forEach((id) => $(id).addEventListener("change", () => { state.resourcesPage = 1; loadResources(); }));
+    $("resources-previous").addEventListener("click", () => { state.resourcesPage--; loadResources(); });
+    $("resources-next").addEventListener("click", () => { state.resourcesPage++; loadResources(); });
+    $("tvbox-form").addEventListener("submit", saveTVBoxSettings);
+    $("tvbox-generate").addEventListener("click", generateTVBox);
+    $("tvbox-retry").addEventListener("click", retryTVBoxSync);
+    $("email-settings-form").addEventListener("submit", saveEmailSettings);
     document.querySelectorAll(".nav-button").forEach((button) => {
       button.addEventListener("click", () => switchPanel(button.dataset.panel));
     });
     $("plugin-type-form").addEventListener("submit", savePluginType);
     $("cancel-type-edit").addEventListener("click", resetPluginTypeForm);
+    document.addEventListener("click", (event) => {
+      if (!state.typeMenu) return;
+      if (event.target === state.typeMenuTrigger || state.typeMenu.contains(event.target)) return;
+      closeTypeMenu();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeTypeMenu();
+    });
+    window.addEventListener("resize", closeTypeMenu);
+    window.addEventListener("scroll", closeTypeMenu, true);
     $("search-users").addEventListener("click", searchUsers);
     $("users-previous").addEventListener("click", () => {
       state.usersPage = Math.max(1, state.usersPage - 1);
@@ -585,8 +759,9 @@ const template = String.raw`<!doctype html>
     $("publish-form").addEventListener("submit", publishPlugin);
 
     const panelCopy = {
-      reviews: ["待审核投稿", "查看投稿内容并决定是否发布"],
-      plugins: ["已上架插件", "查看市场内容、安装数据及下架插件"],
+      plugins: ["插件", "审核投稿并管理已合并插件"],
+      resources: ["Push", "审核用户 Push，并管理已接受的 TVBox 资源"],
+      tvbox: ["TVBox 配置", "维护模板、生成配置并同步关联插件"],
       users: ["用户与白名单", "查看贡献情况并管理免审用户"],
       settings: ["系统设置", "维护低频变动的插件类型配置"]
     };
@@ -603,6 +778,26 @@ const template = String.raw`<!doctype html>
       });
       $("page-title").textContent = panelCopy[panel][0];
       $("page-subtitle").textContent = panelCopy[panel][1];
+      if (panel === "plugins") switchPluginTab(state.pluginTab);
+      if (panel === "resources") switchResourceTab(state.resourceTab);
+    }
+
+    function switchPluginTab(tab) {
+      state.pluginTab = tab;
+      document.querySelectorAll("[data-plugin-page]").forEach((section) => {
+        section.hidden = section.dataset.pluginPage !== tab;
+      });
+      $("plugin-pending-tab").setAttribute("aria-selected", tab === "pending" ? "true" : "false");
+      $("plugin-published-tab").setAttribute("aria-selected", tab === "published" ? "true" : "false");
+    }
+
+    function switchResourceTab(tab) {
+      state.resourceTab = tab;
+      document.querySelectorAll("[data-resource-page]").forEach((section) => {
+        section.hidden = section.dataset.resourcePage !== tab;
+      });
+      $("resource-pending-tab").setAttribute("aria-selected", tab === "pending" ? "true" : "false");
+      $("resource-list-tab").setAttribute("aria-selected", tab === "list" ? "true" : "false");
     }
 
     async function loadPlugins(isLogin = false) {
@@ -617,7 +812,7 @@ const template = String.raw`<!doctype html>
         state.items = page.items;
         state.nextCursor = page.next_cursor;
         renderRows();
-        await Promise.all([loadReviews(), loadUsers(), loadPluginTypes()]);
+        await Promise.all([loadReviews(), loadResourcePushes(), loadResources(), loadTVBoxSettings(), loadEmailSettings(), loadUsers(), loadPluginTypes()]);
         $("connection").textContent = "已连接";
         $("login-error").textContent = "";
         return true;
@@ -635,27 +830,78 @@ const template = String.raw`<!doctype html>
       const response = await api("/api/v1/admin/plugin-types");
       if (!response.ok) throw await responseError(response);
       state.pluginTypes = (await response.json()).items;
-      const tbody = $("plugin-type-rows");
-      tbody.replaceChildren();
+      closeTypeMenu();
+      const grid = $("plugin-type-grid");
+      grid.replaceChildren();
       $("plugin-types-empty").hidden = state.pluginTypes.length !== 0;
       for (const type of state.pluginTypes) {
-        const row = document.createElement("tr");
-        row.append(cell(type.name));
+        const item = document.createElement("div");
+        item.className = "type-item";
+        const main = document.createElement("div");
+        main.className = "type-item-main";
+        const name = document.createElement("strong");
+        name.className = "type-item-name";
+        name.textContent = type.name;
         const value = document.createElement("code");
+        value.className = "type-item-value";
         value.textContent = type.value;
-        row.append(cell(value));
-        const actions = document.createElement("td");
-        actions.className = "actions";
-        const edit = document.createElement("button");
-        edit.className = "button"; edit.type = "button"; edit.textContent = "编辑";
-        edit.addEventListener("click", () => editPluginType(type));
-        const remove = document.createElement("button");
-        remove.className = "button danger"; remove.type = "button"; remove.textContent = "删除";
-        remove.addEventListener("click", () => removePluginType(type, remove));
-        actions.append(edit, remove);
-        row.append(actions);
-        tbody.append(row);
+        main.append(name, value);
+        const more = document.createElement("button");
+        more.className = "button more-trigger";
+        more.type = "button";
+        more.textContent = "⋯";
+        more.title = "更多操作";
+        more.setAttribute("aria-label", type.name + " 更多操作");
+        more.setAttribute("aria-haspopup", "menu");
+        more.setAttribute("aria-expanded", "false");
+        more.addEventListener("click", (event) => {
+          event.stopPropagation();
+          openTypeMenu(more, type);
+        });
+        item.append(main, more);
+        grid.append(item);
       }
+    }
+
+    function openTypeMenu(trigger, type) {
+      closeTypeMenu();
+      const menu = document.createElement("div");
+      menu.className = "more-menu";
+      menu.setAttribute("role", "menu");
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.setAttribute("role", "menuitem");
+      edit.textContent = "编辑";
+      edit.addEventListener("click", () => {
+        closeTypeMenu();
+        editPluginType(type);
+      });
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "danger";
+      remove.setAttribute("role", "menuitem");
+      remove.textContent = "删除";
+      remove.addEventListener("click", () => {
+        closeTypeMenu();
+        removePluginType(type, remove);
+      });
+      menu.append(edit, remove);
+      document.body.append(menu);
+      const rect = trigger.getBoundingClientRect();
+      const top = Math.min(window.innerHeight - menu.offsetHeight - 8, rect.bottom + 6);
+      const left = Math.max(8, Math.min(window.innerWidth - menu.offsetWidth - 8, rect.right - menu.offsetWidth));
+      menu.style.top = Math.max(8, top) + "px";
+      menu.style.left = left + "px";
+      trigger.setAttribute("aria-expanded", "true");
+      state.typeMenu = menu;
+      state.typeMenuTrigger = trigger;
+    }
+
+    function closeTypeMenu() {
+      if (state.typeMenuTrigger) state.typeMenuTrigger.setAttribute("aria-expanded", "false");
+      if (state.typeMenu) state.typeMenu.remove();
+      state.typeMenu = null;
+      state.typeMenuTrigger = null;
     }
 
     function editPluginType(type) {
@@ -680,7 +926,6 @@ const template = String.raw`<!doctype html>
       event.preventDefault();
       const button = $("save-plugin-type");
       button.disabled = true;
-      $("plugin-type-notice").textContent = "";
       try {
         const response = await api("/api/v1/admin/plugin-types", {
           method: "POST",
@@ -694,11 +939,9 @@ const template = String.raw`<!doctype html>
         const saved = await response.json();
         resetPluginTypeForm();
         await loadPluginTypes();
-        $("plugin-type-notice").textContent = saved.name + "（" + saved.value + "）已保存。";
-        $("plugin-type-notice").className = "notice ok";
+        showToast(saved.name + "（" + saved.value + "）已保存。", "ok");
       } catch (error) {
-        $("plugin-type-notice").textContent = error.message;
-        $("plugin-type-notice").className = "notice error";
+        showToast(error.message, "error");
       } finally {
         button.disabled = false;
       }
@@ -715,11 +958,9 @@ const template = String.raw`<!doctype html>
         if (!response.ok) throw await responseError(response);
         if (state.editingType === type.value) resetPluginTypeForm();
         await loadPluginTypes();
-        $("plugin-type-notice").textContent = "插件类型已删除。";
-        $("plugin-type-notice").className = "notice ok";
+        showToast("插件类型已删除。", "ok");
       } catch (error) {
-        $("plugin-type-notice").textContent = error.message;
-        $("plugin-type-notice").className = "notice error";
+        showToast(error.message, "error");
         button.disabled = false;
       }
     }
@@ -731,6 +972,10 @@ const template = String.raw`<!doctype html>
       for (const item of state.items) {
         const row = document.createElement("tr");
         row.append(cell(pluginIdentity(item)));
+        const type = document.createElement("span");
+        type.className = "badge";
+        type.textContent = item.manifest?.type || "—";
+        row.append(cell(type));
         row.append(cell(item.author));
         row.append(cell(item.latest_version));
         const platforms = document.createElement("td");
@@ -796,10 +1041,8 @@ const template = String.raw`<!doctype html>
       try {
         state.usersPage = 1;
         await loadUsers();
-        $("user-notice").textContent = "";
       } catch (error) {
-        $("user-notice").textContent = error.message;
-        $("user-notice").className = "notice error";
+        showToast(error.message, "error");
       }
     }
 
@@ -810,6 +1053,7 @@ const template = String.raw`<!doctype html>
         const row = document.createElement("tr");
         row.append(cell(userIdentity(user)));
         row.append(cell(new Intl.NumberFormat().format(user.contribution_count)));
+        row.append(cell(new Intl.NumberFormat().format(user.contribution_points ?? 0)));
         if (actions) {
           const action = document.createElement("td");
           const button = document.createElement("button");
@@ -849,7 +1093,6 @@ const template = String.raw`<!doctype html>
           : "将 " + user.nick + " 移出白名单？之后的投稿将恢复人工审核。"
       )) return;
       button.disabled = true;
-      $("user-notice").textContent = "";
       try {
         const response = await api(
           "/api/v1/admin/users/" + encodeURIComponent(user.id) + "/whitelist",
@@ -860,16 +1103,132 @@ const template = String.raw`<!doctype html>
           }
         );
         if (!response.ok) throw await responseError(response);
-        $("user-notice").textContent = enabled
-          ? user.nick + " 已加入白名单。"
-          : user.nick + " 已移出白名单。";
-        $("user-notice").className = "notice ok";
+        showToast(enabled ? user.nick + " 已加入白名单。" : user.nick + " 已移出白名单。", "ok");
         await loadUsers();
       } catch (error) {
-        $("user-notice").textContent = error.message;
-        $("user-notice").className = "notice error";
+        showToast(error.message, "error");
         button.disabled = false;
       }
+    }
+
+    async function loadResourcePushes() {
+      const response = await api("/api/v1/admin/pushes?page=1&page_size=100");
+      if (!response.ok) throw await responseError(response);
+      const result = await response.json();
+      state.resourcePushes = result.items;
+      $("push-review-summary").textContent = result.total + " 个 Push 等待处理";
+      $("push-review-empty").hidden = result.items.length !== 0;
+      const tbody = $("push-review-rows"); tbody.replaceChildren();
+      for (const item of result.items) {
+        const row = document.createElement("tr");
+        row.append(cell(item.name || "—"), cell(item.resource_type === "py" ? "Python" : "CMS"), cell(item.user.nick + " / " + item.user.email), cell(item.user_note || "—"), cell(new Date(item.pushed_at).toLocaleString()));
+        const actions = document.createElement("td"); actions.className = "actions";
+        const accept = document.createElement("button"); accept.className = "button primary"; accept.type = "button"; accept.textContent = "接受"; accept.addEventListener("click", () => reviewResourcePush(item, true));
+        const reject = document.createElement("button"); reject.className = "button danger"; reject.type = "button"; reject.textContent = "拒绝"; reject.addEventListener("click", () => reviewResourcePush(item, false));
+        actions.append(accept, reject); row.append(actions); tbody.append(row);
+      }
+    }
+
+    async function reviewResourcePush(item, accepting, options = {}) {
+      let body = accepting ? { ...options } : {};
+      if (!accepting) {
+        const reason = prompt("拒绝原因（必填，至少 2 个字符）", "");
+        if (reason === null || reason.trim().length < 2) return;
+        body = { reason: reason.trim() };
+      }
+      try {
+        const response = await api("/api/v1/admin/pushes/" + encodeURIComponent(item.id) + "/" + (accepting ? "accept" : "reject"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+        if (!response.ok) throw await responseError(response);
+        showToast(accepting ? "Push 已接受，新资源默认启用。" : "Push 已拒绝，用户将收到通知。", "ok");
+        await Promise.all([loadResourcePushes(), loadResources()]);
+      } catch (error) {
+        if (accepting && error.code === "resource_conflict" && !body.overwrite
+          && confirm(error.message + "\n\n是否覆盖现有资源？")) {
+          return reviewResourcePush(item, true, { overwrite: true });
+        }
+        showToast(error.message, "error");
+      }
+    }
+
+    async function loadResources() {
+      const url = new URL("/api/v1/admin/resources", location.origin);
+      url.searchParams.set("type", $("resource-type-filter").value);
+      url.searchParams.set("status", $("resource-status-filter").value);
+      url.searchParams.set("sort", $("resource-sort").value);
+      url.searchParams.set("page", String(state.resourcesPage)); url.searchParams.set("page_size", "20");
+      const response = await api(url); if (!response.ok) throw await responseError(response);
+      const result = await response.json(); state.resourcesPage = result.page; state.resourcesTotalPages = result.total_pages;
+      $("resource-empty").hidden = result.items.length !== 0;
+      $("resources-pager").hidden = result.total_pages <= 1;
+      $("resources-previous").disabled = result.page <= 1; $("resources-next").disabled = result.page >= result.total_pages;
+      renderResourcePagination(result.page, result.total_pages);
+      const statusNames = { synced: "已同步", pending_add: "待加入", pending_remove: "待移除", changed: "有变更", not_included: "未包含" };
+      const tbody = $("resource-rows"); tbody.replaceChildren();
+      for (const item of result.items) {
+        const enabled = Number(item.enabled) === 1; const row = document.createElement("tr");
+        row.append(cell(item.name), cell(item.resource_type === "py" ? "Python" : "CMS"), cell(enabled ? "已启用" : "已停用"), cell(statusNames[item.config_status] || item.config_status), cell(new Date(item.updated_at).toLocaleString()));
+        const actions = document.createElement("td"); actions.className = "actions";
+        const toggle = document.createElement("button"); toggle.className = "button"; toggle.type = "button"; toggle.textContent = enabled ? "停用" : "启用"; toggle.addEventListener("click", () => toggleResource(item, !enabled));
+        const remove = document.createElement("button"); remove.className = "button danger"; remove.type = "button"; remove.textContent = "删除"; remove.addEventListener("click", () => removeResource(item)); actions.append(toggle, remove); row.append(actions); tbody.append(row);
+      }
+    }
+
+    function renderResourcePagination(current, total) {
+      const container = $("resources-pagination"); container.replaceChildren();
+      const pages = new Set([1, total, current - 1, current, current + 1, current - 2, current + 2]);
+      const visible = [...pages].filter((page) => page >= 1 && page <= total).sort((a, b) => a - b);
+      let previous = 0;
+      for (const page of visible) {
+        if (page - previous > 1) { const ellipsis = document.createElement("span"); ellipsis.className = "page-ellipsis"; ellipsis.textContent = "…"; container.append(ellipsis); }
+        const button = document.createElement("button"); button.type = "button"; button.className = "page-number" + (page === current ? " active" : ""); button.textContent = String(page); button.setAttribute("aria-current", page === current ? "page" : "false"); button.addEventListener("click", () => { state.resourcesPage = page; loadResources(); }); container.append(button); previous = page;
+      }
+    }
+
+    async function toggleResource(item, enabled) {
+      try { const response = await api("/api/v1/admin/resources/" + item.resource_type + "/" + encodeURIComponent(item.id) + "/enabled", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled }) }); if (!response.ok) throw await responseError(response); await loadResources(); }
+      catch (error) { showToast(error.message, "error"); }
+    }
+
+    async function removeResource(item) {
+      try { const response = await api("/api/v1/admin/resources/" + item.resource_type + "/" + encodeURIComponent(item.id), { method: "DELETE" }); if (!response.ok) throw await responseError(response); showToast("资源已删除，TVBox 配置不会自动重新生成。", "ok"); await loadResources(); }
+      catch (error) { showToast(error.message, "error"); }
+    }
+
+    async function loadTVBoxSettings() {
+      const response = await api("/api/v1/admin/tvbox/settings"); if (!response.ok) throw await responseError(response);
+      const settings = await response.json(); $("tvbox-template").value = JSON.stringify(settings.template, null, 2); $("tvbox-plugin-id").value = settings.linked_plugin_id || "";
+      $("tvbox-status").textContent = settings.generated_at ? "上次生成：" + new Date(settings.generated_at).toLocaleString() + " · 插件同步：" + (settings.plugin_sync_status || "未关联") : "尚未生成配置";
+    }
+
+    async function saveTVBoxSettings(event) {
+      event.preventDefault();
+      try { const template = JSON.parse($("tvbox-template").value); const response = await api("/api/v1/admin/tvbox/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ template, linked_plugin_id: $("tvbox-plugin-id").value.trim() || null }) }); if (!response.ok) throw await responseError(response); await loadTVBoxSettings(); $("tvbox-notice").textContent = "设置已保存。"; $("tvbox-notice").className = "notice ok"; }
+      catch (error) { $("tvbox-notice").textContent = error.message; $("tvbox-notice").className = "notice error"; }
+    }
+
+    async function generateTVBox() {
+      try { const response = await api("/api/v1/admin/tvbox/generate", { method: "POST" }); if (!response.ok) throw await responseError(response); const result = await response.json(); const resourceMessage = result.resource_count === 0 ? "，当前没有启用的 PY/CMS 资源" : "，共 " + result.resource_count + " 个站点"; $("tvbox-notice").textContent = (result.changed ? "配置已生成" : "内容未变化，无需更新") + resourceMessage + "。地址：" + result.config_url; $("tvbox-notice").className = "notice ok"; await Promise.all([loadTVBoxSettings(), loadResources()]); }
+      catch (error) { $("tvbox-notice").textContent = error.message; $("tvbox-notice").className = "notice error"; }
+    }
+
+    async function retryTVBoxSync() {
+      try { const response = await api("/api/v1/admin/tvbox/retry-plugin-sync", { method: "POST" }); if (!response.ok) throw await responseError(response); const result = await response.json(); $("tvbox-notice").textContent = result.status === "synced" ? "关联插件已同步到版本 " + result.version : "同步失败：" + result.error; $("tvbox-notice").className = result.status === "synced" ? "notice ok" : "notice error"; await loadTVBoxSettings(); }
+      catch (error) { $("tvbox-notice").textContent = error.message; $("tvbox-notice").className = "notice error"; }
+    }
+
+    async function loadEmailSettings() {
+      const response = await api("/api/v1/admin/settings/email");
+      if (!response.ok) throw await responseError(response);
+      $("email-enabled").checked = (await response.json()).enabled !== false;
+    }
+
+    async function saveEmailSettings(event) {
+      event.preventDefault();
+      try {
+        const response = await api("/api/v1/admin/settings/email", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: $("email-enabled").checked }) });
+        if (!response.ok) throw await responseError(response);
+        showToast($("email-enabled").checked ? "邮件通知已开启。" : "邮件通知已关闭。", "ok");
+      } catch (error) { showToast(error.message, "error"); }
     }
 
     async function loadReviews() {
@@ -985,11 +1344,33 @@ const template = String.raw`<!doctype html>
 
     function pluginIdentity(item) {
       const wrap = document.createElement("div");
+      wrap.className = "plugin-identity";
+      if (item.icon_url) {
+        const icon = document.createElement("img");
+        icon.className = "plugin-icon";
+        icon.alt = "";
+        icon.src = item.icon_url;
+        icon.addEventListener("error", () => {
+          const fallback = document.createElement("span");
+          fallback.className = "plugin-icon-fallback";
+          fallback.textContent = "◇";
+          icon.replaceWith(fallback);
+        }, { once: true });
+        wrap.append(icon);
+      } else {
+        const fallback = document.createElement("span");
+        fallback.className = "plugin-icon-fallback";
+        fallback.textContent = "◇";
+        wrap.append(fallback);
+      }
+      const info = document.createElement("div");
       const name = document.createElement("span");
       name.className = "plugin-name"; name.textContent = item.name;
       const id = document.createElement("span");
       id.className = "plugin-id"; id.textContent = item.id;
-      wrap.append(name, id); return wrap;
+      info.append(name, id);
+      wrap.append(info);
+      return wrap;
     }
 
     function viewPublishedPlugin(item) {
@@ -1106,7 +1487,9 @@ const template = String.raw`<!doctype html>
     }
     async function responseError(response) {
       const body = await response.json().catch(() => ({}));
-      return new Error(body.message || "请求失败 (" + response.status + ")");
+      const error = new Error(body.message || "请求失败 (" + response.status + ")");
+      error.code = body.code;
+      return error;
     }
     function setPlatforms(platforms) {
       $("platform-ios").checked = platforms.includes("ios");
@@ -1615,8 +1998,15 @@ const template = String.raw`<!doctype html>
       $("notice").textContent = message; $("notice").className = "notice " + kind;
     }
     function showReviewNotice(message, kind) {
-      $("review-notice").textContent = message;
-      $("review-notice").className = "notice " + kind;
+      showToast(message, kind);
+    }
+    let toastTimer;
+    function showToast(message, kind = "ok") {
+      const toast = $("toast");
+      toast.textContent = message;
+      toast.className = "toast visible " + kind;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toast.className = "toast"; }, 3200);
     }
     function setBusy(busy) {
       $("refresh").disabled = busy;

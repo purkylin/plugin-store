@@ -684,6 +684,166 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /user/pushes:
+    get:
+      operationId: listUserResourcePushes
+      summary: List the signed-in user's resource Push history
+      security:
+        - userSession: []
+      responses:
+        "200": { description: Paginated Push history }
+  /user/pushes/py:
+    post:
+      operationId: pushPythonResource
+      summary: Push a Python file or a URL that the server downloads immediately
+      security:
+        - userSession: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+                url: { type: string, format: uri }
+                note: { type: string, maxLength: 500 }
+                is_adult: { type: boolean, default: false }
+      responses:
+        "202": { description: Push queued for review }
+        "409": { $ref: "#/components/responses/Error" }
+  /user/pushes/cms:
+    post:
+      operationId: pushCMSResource
+      summary: Push a named CMS URL
+      security:
+        - userSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, url]
+              properties:
+                name: { type: string, maxLength: 100 }
+                url: { type: string, format: uri }
+                note: { type: string, maxLength: 500 }
+                is_adult: { type: boolean, default: false }
+      responses:
+        "202": { description: Push queued for review }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/pushes:
+    get:
+      operationId: listPendingResourcePushes
+      summary: List pending PY and CMS Pushes
+      security:
+        - adminToken: []
+      responses:
+        "200": { description: Pending resource Push queue }
+  /admin/pushes/{push_id}/accept:
+    post:
+      operationId: acceptResourcePush
+      summary: Accept a resource Push; the resulting resource starts disabled
+      security:
+        - adminToken: []
+      parameters:
+        - { name: push_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Push accepted }
+  /admin/pushes/{push_id}/reject:
+    post:
+      operationId: rejectResourcePush
+      summary: Reject a resource Push with a user-visible reason
+      security:
+        - adminToken: []
+      parameters:
+        - { name: push_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Push rejected }
+  /admin/resources:
+    get:
+      operationId: listTVBoxResources
+      summary: List PY and CMS resources with filters, sorting, and pagination
+      security:
+        - adminToken: []
+      responses:
+        "200": { description: Paginated resource list }
+  /admin/resources/{type}/{resource_id}/enabled:
+    put:
+      operationId: setTVBoxResourceEnabled
+      summary: Enable or disable a resource for the next generated configuration
+      security:
+        - adminToken: []
+      parameters:
+        - { name: type, in: path, required: true, schema: { type: string, enum: [py, cms] } }
+        - { name: resource_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Resource updated }
+  /admin/resources/{type}/{resource_id}:
+    delete:
+      operationId: deleteTVBoxResource
+      summary: Delete a PY or CMS resource without regenerating the TVBox configuration
+      security:
+        - adminToken: []
+      parameters:
+        - { name: type, in: path, required: true, schema: { type: string, enum: [py, cms] } }
+        - { name: resource_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Resource deleted; the TVBox configuration remains unchanged until manually regenerated }
+  /admin/tvbox/settings:
+    get:
+      operationId: getTVBoxSettings
+      security:
+        - adminToken: []
+      responses:
+        "200": { description: Template and linked plugin settings }
+    put:
+      operationId: saveTVBoxSettings
+      security:
+        - adminToken: []
+      responses:
+        "200": { description: Settings saved }
+  /admin/tvbox/generate:
+    post:
+      operationId: generateTVBoxConfig
+      description: Generates the TVBox configuration, publishes a new linked-plugin release, and overwrites any public owner draft with that generated manifest. Pending reviews and submission history are not modified.
+      summary: Replace the template sites field and write the generated config to R2
+      security:
+        - adminToken: []
+      responses:
+        "200": { description: Generation and optional plugin sync result }
+  /admin/tvbox/retry-plugin-sync:
+    post:
+      operationId: retryTVBoxPluginSync
+      security:
+        - adminToken: []
+      responses:
+        "200": { description: Linked plugin sync result }
+  /admin/settings/email:
+    get:
+      operationId: getEmailNotificationSetting
+      summary: Read the global email notification switch
+      security:
+        - adminToken: []
+      responses:
+        "200": { description: Email notification setting }
+    put:
+      operationId: setEmailNotificationSetting
+      summary: Enable or disable all Resend notifications
+      security:
+        - adminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        "200": { description: Setting saved }
 components:
   securitySchemes:
     adminToken:
@@ -1077,7 +1237,7 @@ components:
           description: Present when a whitelisted user publishes the drafts directly.
     AdminUser:
       type: object
-      required: [id, email, nick, created_at, whitelisted, contribution_count]
+      required: [id, email, nick, created_at, whitelisted, contribution_count, contribution_points]
       properties:
         id:
           type: string
@@ -1096,6 +1256,10 @@ components:
           type: integer
           minimum: 0
           description: Number of distinct plugins with an accepted submission.
+        contribution_points:
+          type: integer
+          minimum: 0
+          description: Contribution points earned from accepted plugins and resources.
     AdminUserStats:
       type: object
       required: [total_users, whitelisted_users, top_contributors]

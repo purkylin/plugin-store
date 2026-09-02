@@ -69,10 +69,13 @@ const template = String.raw`<!doctype html>
     .button.danger { color: #ffc3cb; border-color: rgba(255,125,141,.3); background: rgba(255,125,141,.07); }
     .button:disabled { opacity: .45; cursor: not-allowed; }
     .notice { min-height: 22px; margin-top: 10px; color: var(--muted); font-size: 13px; }
-    .list-footer { margin: 0; padding: 12px 20px 16px; }
     .notice.error { color: var(--danger); }
     .notice.ok { color: var(--accent); }
-    .user-bar { padding: 14px 20px; border-bottom: 1px solid var(--line); }
+    .user-bar { flex-wrap: wrap; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+    .user-identity { display: flex; align-items: center; gap: 14px; min-width: 0; }
+    .contribution-points { display: inline-flex; align-items: baseline; gap: 5px; padding: 5px 9px; border: 1px solid rgba(85,214,190,.24); border-radius: 999px; background: rgba(85,214,190,.08); white-space: nowrap; }
+    .contribution-points strong { color: var(--accent); font-size: 15px; line-height: 1; }
+    .contribution-points span { color: var(--muted); font-size: 11px; }
     .table-wrap { overflow-x: auto; }
     table { width: 100%; min-width: 720px; border-collapse: collapse; }
     th,td { padding: 13px 20px; text-align: left; border-bottom: 1px solid var(--line); }
@@ -84,6 +87,7 @@ const template = String.raw`<!doctype html>
     .cancelled { color: var(--muted); background: rgba(145,169,187,.12); }
     .draft { color: var(--blue); background: rgba(108,169,255,.12); }
     .private { color: #d4c6ff; background: rgba(156,126,255,.13); }
+    .linked-plugin { margin-left: 6px; color: #a9d1ff; background: rgba(108,169,255,.16); }
     .submission-actions { display: grid; gap: 8px; justify-items: start; }
     .history { color: var(--muted); font-size: 12px; }
     .history summary { cursor: pointer; color: var(--blue); }
@@ -129,6 +133,15 @@ const template = String.raw`<!doctype html>
     .checks label { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 14px; font-weight: 500; }
     .checks input { width: auto; accent-color: var(--accent); }
     .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+    .push-switch { display: flex; gap: 8px; margin-bottom: 16px; }
+    .push-switch .button.active { color: #06251f; border-color: transparent; background: var(--accent); }
+    .compact-table { min-width: 620px; }
+    .portal-tabs { display: flex; gap: 6px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: rgba(2,10,19,.38); }
+    .portal-tab { border: 0; border-radius: 8px; padding: 8px 13px; color: var(--muted); background: transparent; }
+    .portal-tab[aria-selected="true"] { color: var(--text); background: rgba(108,169,255,.16); }
+    .toast { position: fixed; z-index: 80; right: 24px; bottom: 24px; max-width: min(420px, calc(100% - 48px)); padding: 12px 16px; border: 1px solid rgba(85,214,190,.35); border-radius: 12px; color: var(--text); background: #12352f; box-shadow: 0 16px 38px rgba(0,0,0,.35); opacity: 0; transform: translateY(12px); pointer-events: none; transition: opacity .18s ease, transform .18s ease; }
+    .toast.visible { opacity: 1; transform: translateY(0); }
+    .toast.error { border-color: rgba(255,125,141,.38); background: #3a1d2a; }
     @media (max-width: 760px) {
       .auth-grid,.row { grid-template-columns: 1fr; gap: 0; }
       .custom-row { grid-template-columns: 1fr 90px auto; }
@@ -170,16 +183,23 @@ const template = String.raw`<!doctype html>
     <main id="portal" hidden>
       <section class="card">
         <div class="user-bar">
-          <div><strong id="user-nick"></strong><p class="subtitle" id="user-email"></p></div>
+          <div class="user-identity"><div><strong id="user-nick"></strong><p class="subtitle" id="user-email"></p></div><div class="contribution-points" title="插件或 Push 首次通过 +1；私有插件和更新不计分"><strong id="contribution-points">0</strong><span>贡献值</span></div></div>
           <div class="actions">
+            <div class="portal-tabs" role="tablist" aria-label="用户中心">
+              <button class="portal-tab" id="portal-plugins-tab" type="button" role="tab" aria-selected="true">我的插件</button>
+              <button class="portal-tab" id="portal-pushes-tab" type="button" role="tab" aria-selected="false">资源 Push</button>
+            </div>
             <button class="button" id="logout" type="button">退出登录</button>
-            <button class="button" id="import-plugins" type="button">批量导入 JSON</button>
-            <input id="import-json-file" type="file" accept=".json,application/json" hidden>
-            <button class="button" id="submit-all-drafts" type="button" disabled>全部提交审核</button>
-            <button class="button primary" id="new-plugin" type="button">新建插件</button>
           </div>
         </div>
-        <div class="card-head"><div><h2>我的插件</h2><p class="subtitle">管理公开投稿和仅供手动导入的私有插件</p></div><button class="button" id="refresh" type="button">刷新</button></div>
+      </section>
+
+      <section class="card" id="push-card" data-portal-page="pushes" hidden>
+        <div class="card-head"><div><h2>Push 记录</h2><p class="subtitle">你提交的 Python 与 CMS 资源</p></div><button class="button primary" id="new-push" type="button" aria-label="新建 Push" title="新建 Push">＋</button></div>
+        <div class="table-wrap"><table class="compact-table"><thead><tr><th>资源</th><th>类型</th><th>状态</th><th>提交时间</th><th>说明</th></tr></thead><tbody id="push-rows"></tbody></table><div class="empty" id="push-empty">暂无 Push 记录</div></div>
+      </section>
+      <section class="card" data-portal-page="plugins">
+        <div class="card-head"><div><h2>我的插件</h2><p class="subtitle">管理公开投稿和仅供手动导入的私有插件</p></div><div class="actions"><button class="button" id="refresh" type="button">刷新</button><button class="button" id="import-plugins" type="button">批量导入 JSON</button><input id="import-json-file" type="file" accept=".json,application/json" hidden><button class="button" id="submit-all-drafts" type="button" disabled>全部提交审核</button><button class="button primary" id="new-plugin" type="button">新建插件</button></div></div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>插件</th><th>提交版本</th><th>审核状态</th><th>提交时间</th><th>审核说明</th><th></th></tr></thead>
@@ -187,7 +207,6 @@ const template = String.raw`<!doctype html>
           </table>
          <div class="empty" id="empty">暂无投稿记录</div>
         </div>
-        <p class="notice list-footer" id="submission-notice"></p>
       </section>
 
       <dialog id="editor-dialog">
@@ -229,6 +248,25 @@ const template = String.raw`<!doctype html>
   </div>
 
   <div class="action-menu" id="plugin-action-menu" role="menu" hidden></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <dialog id="push-dialog">
+    <div class="dialog-body">
+      <div class="card-head"><div><h2>新建资源 Push</h2><p class="subtitle">提交后由管理员处理</p></div><button class="button" id="close-push" type="button">关闭</button></div>
+      <form id="push-form">
+        <div class="push-switch"><button class="button active" id="push-type-py" type="button">Python</button><button class="button" id="push-type-cms" type="button">CMS</button></div>
+        <div id="push-py-fields">
+          <div class="field"><label>来源</label><select id="push-py-source"><option value="file">上传 .py 文件</option><option value="url">从 URL 获取</option></select></div>
+          <div class="field" id="push-file-field"><label class="required" for="push-file">Python 文件</label><input id="push-file" type="file" accept=".py,text/x-python"><span class="help">支持中文、空格和括号，只需文件名以 .py 结尾。</span></div>
+          <div class="field" id="push-url-field" hidden><label class="required" for="push-py-url">Python URL</label><input id="push-py-url" type="url" placeholder="https://example.com/script.py"><span class="help">提交时由服务器下载并保存内容，之后原地址变化不会影响本次审核。</span></div>
+        </div>
+        <div id="push-cms-fields" hidden><div class="row"><div class="field"><label class="required" for="push-cms-name">CMS 名称</label><input id="push-cms-name" maxlength="100"></div><div class="field"><label class="required" for="push-cms-url">CMS URL</label><input id="push-cms-url" type="url" placeholder="https://example.com/api.php/provide/vod/"></div></div></div>
+        <div class="field"><label for="push-note">备注</label><textarea id="push-note" maxlength="500" placeholder="可选：补充来源、更新内容或注意事项"></textarea></div>
+        <div class="checks"><label><input id="push-adult" type="checkbox"> 包含 🔞 内容</label></div>
+        <div class="form-actions"><button class="button" id="cancel-push" type="button">取消</button><button class="button primary" id="push-submit" type="submit">提交 Push</button></div>
+        <p class="notice" id="push-dialog-notice"></p>
+      </form>
+    </div>
+  </dialog>
   <dialog id="config-dialog">
     <div class="dialog-body">
       <h2 id="config-title">插件配置</h2>
@@ -260,7 +298,7 @@ const template = String.raw`<!doctype html>
   </dialog>
   <script nonce="__NONCE__">
     const state = {
-      user: null, submissions: [], pluginTypes: [], editing: false, actionTrigger: null
+      user: null, submissions: [], pushes: [], pushType: "py", portalPage: "plugins", pluginTypes: [], editing: false, actionTrigger: null
     };
     const $ = (id) => document.getElementById(id);
     const known = new Set(["id","type","icon","name","author","version","update_time","desc","endpoint"]);
@@ -297,6 +335,15 @@ const template = String.raw`<!doctype html>
       $("portal").hidden = true; $("auth-card").hidden = false;
     });
     $("refresh").addEventListener("click", loadPortalData);
+    $("portal-plugins-tab").addEventListener("click", () => switchPortalPage("plugins"));
+    $("portal-pushes-tab").addEventListener("click", () => switchPortalPage("pushes"));
+    $("push-type-py").addEventListener("click", () => setPushType("py"));
+    $("push-type-cms").addEventListener("click", () => setPushType("cms"));
+    $("push-py-source").addEventListener("change", updatePushSource);
+    $("push-form").addEventListener("submit", submitPush);
+    $("new-push").addEventListener("click", openPushDialog);
+    $("close-push").addEventListener("click", closePushDialog);
+    $("cancel-push").addEventListener("click", closePushDialog);
     $("new-plugin").addEventListener("click", newPlugin);
     $("import-plugins").addEventListener("click", () => $("import-json-file").click());
     $("import-json-file").addEventListener("change", importPlugins);
@@ -356,12 +403,119 @@ const template = String.raw`<!doctype html>
     function showPortal(user) {
       state.user = user;
       $("auth-card").hidden = true; $("portal").hidden = false;
+      updateUserSummary(user);
+      switchPortalPage(state.portalPage);
+    }
+
+    function updateUserSummary(user) {
       $("user-nick").textContent = user.nick;
       $("user-email").textContent = user.email;
+      $("contribution-points").textContent = new Intl.NumberFormat().format(user.contribution_points ?? 0);
+    }
+
+    function switchPortalPage(page) {
+      state.portalPage = page;
+      document.querySelectorAll("[data-portal-page]").forEach((section) => {
+        section.hidden = section.dataset.portalPage !== page;
+      });
+      $("portal-plugins-tab").setAttribute("aria-selected", page === "plugins" ? "true" : "false");
+      $("portal-pushes-tab").setAttribute("aria-selected", page === "pushes" ? "true" : "false");
     }
 
     async function loadPortalData() {
-      await Promise.all([loadSubmissions(), loadPluginTypes()]);
+      await Promise.all([loadSubmissions(), loadPushes(), loadPluginTypes(), loadCurrentUser()]);
+    }
+
+    async function loadCurrentUser() {
+      const response = await fetch("/api/v1/user/me", { credentials: "same-origin" });
+      if (!response.ok) throw await responseError(response);
+      const result = await response.json();
+      state.user = result.user;
+      updateUserSummary(result.user);
+    }
+
+    function setPushType(type) {
+      state.pushType = type;
+      $("push-py-fields").hidden = type !== "py";
+      $("push-cms-fields").hidden = type !== "cms";
+      $("push-type-py").classList.toggle("active", type === "py");
+      $("push-type-cms").classList.toggle("active", type === "cms");
+    }
+
+    function updatePushSource() {
+      const file = $("push-py-source").value === "file";
+      $("push-file-field").hidden = !file;
+      $("push-url-field").hidden = file;
+    }
+
+    function openPushDialog() {
+      showNotice("push-dialog-notice", "", "");
+      $("push-dialog").showModal();
+    }
+
+    function closePushDialog() {
+      if ($("push-dialog").open) $("push-dialog").close();
+    }
+
+    async function submitPush(event) {
+      event.preventDefault();
+      const button = $("push-submit");
+      button.disabled = true;
+      showNotice("push-dialog-notice", "正在提交…", "");
+      try {
+        let response;
+        if (state.pushType === "py") {
+          const form = new FormData();
+          if ($("push-py-source").value === "file") {
+            const file = $("push-file").files[0];
+            if (!file) throw new Error("请选择一个 .py 文件。");
+            form.append("file", file);
+          } else {
+            const url = $("push-py-url").value.trim();
+            if (!url) throw new Error("请填写 Python URL。");
+            form.append("url", url);
+          }
+          form.append("note", $("push-note").value.trim());
+          form.append("is_adult", $("push-adult").checked ? "true" : "false");
+          response = await fetch("/api/v1/user/pushes/py", { method: "POST", credentials: "same-origin", body: form });
+        } else {
+          const name = $("push-cms-name").value.trim();
+          const url = $("push-cms-url").value.trim();
+          if (!name || !url) throw new Error("请填写 CMS 名称和 URL。");
+          response = await fetch("/api/v1/user/pushes/cms", {
+            method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ name, url, note: $("push-note").value.trim() || null, is_adult: $("push-adult").checked })
+          });
+        }
+        if (!response.ok) throw await responseError(response);
+        $("push-form").reset(); setPushType(state.pushType); updatePushSource();
+        await loadPushes();
+        await loadCurrentUser();
+        closePushDialog();
+        showNotice("push-notice", "Push 已提交，处理结果会显示在记录中并通过邮件通知。", "ok");
+      } catch (error) {
+        showNotice("push-dialog-notice", error.message, "error");
+      } finally { button.disabled = false; }
+    }
+
+    async function loadPushes() {
+      const response = await fetch("/api/v1/user/pushes?page=1&page_size=100", { credentials: "same-origin" });
+      if (!response.ok) throw await responseError(response);
+      state.pushes = (await response.json()).items;
+      renderPushRows($("push-rows"), state.pushes);
+      $("push-empty").hidden = state.pushes.length > 0;
+    }
+
+    function renderPushRows(tbody, items) {
+      tbody.replaceChildren();
+      const labels = { pending: "待处理", accepted: "已接受", rejected: "已拒绝" };
+      for (const item of items) {
+        const badge = document.createElement("span"); badge.className = "badge " + item.status; badge.textContent = labels[item.status] || item.status;
+        const note = item.rejection_reason || item.review_note || item.user_note || "—";
+        const row = document.createElement("tr");
+        row.append(cell(item.name || "—"), cell(item.resource_type === "py" ? "Python" : "CMS"), cell(badge), cell(new Date(item.pushed_at).toLocaleString()), cell(note));
+        tbody.append(row);
+      }
     }
 
     async function loadPluginTypes() {
@@ -433,6 +587,7 @@ const template = String.raw`<!doctype html>
         if (!response.ok) throw await responseError(response);
         const result = await response.json();
         await loadSubmissions();
+        await loadCurrentUser();
         showNotice(
           "submission-notice",
           result.published_count !== undefined
@@ -532,7 +687,15 @@ const template = String.raw`<!doctype html>
           draft: "草稿",
           private: "私有"
         }[item.status];
-        statusCell.append(badge); row.append(statusCell);
+        statusCell.append(badge);
+        if (item.linked) {
+          const linked = document.createElement("span");
+          linked.className = "badge linked-plugin";
+          linked.textContent = "已关联";
+          linked.title = "后台配置已关联此插件，自动更新会同步并覆盖公开草稿";
+          statusCell.append(linked);
+        }
+        row.append(statusCell);
         row.append(cell(new Date(item.submitted_at).toLocaleString()));
         row.append(cell(item.rejection_reason || "—"));
         const action = document.createElement("td");
@@ -896,7 +1059,6 @@ const template = String.raw`<!doctype html>
         $("inspect-dialog").showModal();
       } catch (error) {
         showNotice("editor-notice", "检查失败：" + (error && error.message ? error.message : String(error)), "error");
-        $("editor-notice").scrollIntoView({ behavior: "smooth", block: "nearest" });
       } finally {
         btn.disabled = false;
         btn.textContent = "检查";
@@ -1057,6 +1219,7 @@ const template = String.raw`<!doctype html>
         if (!response.ok) throw await responseError(response);
         const result = await response.json();
         await loadSubmissions();
+        await loadCurrentUser();
         closeEditor();
         showNotice(
           "submission-notice",
@@ -1199,11 +1362,21 @@ const template = String.raw`<!doctype html>
       return new Error(body.message || "请求失败 (" + response.status + ")");
     }
     function showNotice(id,message,kind) {
+      if (id === "submission-notice" || id === "push-notice") {
+        if (message) showToast(message, kind);
+        return;
+      }
       const target = $(id);
       target.textContent = message;
-      target.className = "notice"
-        + (id === "submission-notice" ? " list-footer" : "")
-        + (kind ? " " + kind : "");
+      target.className = "notice" + (kind ? " " + kind : "");
+    }
+    let toastTimer;
+    function showToast(message, kind = "ok") {
+      const toast = $("toast");
+      toast.textContent = message;
+      toast.className = "toast visible " + kind;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toast.className = "toast"; }, 3200);
     }
   </script>
 </body>

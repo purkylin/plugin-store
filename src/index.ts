@@ -23,6 +23,7 @@ import {
   getManifest,
   getPluginDraftVisibility,
   getPendingSubmission,
+  getPluginNotificationRecipient,
   importPluginDrafts,
   listAdminPlugins,
   listAdminUsers,
@@ -42,6 +43,30 @@ import {
   unpublishPlugin,
   upsertPluginType,
 } from "./repository";
+import {
+  acceptResourcePush,
+  createCMSPush,
+  createPythonPush,
+  deleteResource,
+  listPendingResourcePushes,
+  listResources,
+  listUserResourcePushes,
+  publicPush,
+  rejectResourcePush,
+  setResourceEnabled,
+  type ResourcePushRow,
+  type ResourceType,
+} from "./resources";
+import {
+  generateTVBoxConfig,
+  getEmailSetting,
+  getTVBoxSettings,
+  readTVBoxObject,
+  retryPluginSync,
+  saveTVBoxSettings,
+  saveEmailSetting,
+} from "./tvbox";
+import { scheduleAdminEmail, scheduleEmail } from "./email";
 import { userSubmissionPage } from "./submit";
 import type { Env } from "./types";
 import {
@@ -65,16 +90,16 @@ import { inspectPluginScript } from "./inspect";
 import { compareVersions } from "./version";
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, context: ExecutionContext): Promise<Response> {
     try {
-      return await route(request, env);
+      return await route(request, env, context);
     } catch (cause) {
       return handleError(cause);
     }
   },
 } satisfies ExportedHandler<Env>;
 
-async function route(request: Request, env: Env): Promise<Response> {
+async function route(request: Request, env: Env, context: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const apiPath: string | null = url.pathname === "/api/v1"
     ? "/v1"
@@ -85,6 +110,12 @@ async function route(request: Request, env: Env): Promise<Response> {
 
   if (request.method === "GET" && url.pathname === "/api/health") {
     return json({ status: "ok" });
+  }
+  if (
+    request.method === "GET"
+    && (url.pathname === "/tvbox/config/tvbox.json" || /^\/tvbox\/py\/[A-Za-z0-9._-]+\.py$/.test(url.pathname))
+  ) {
+    return readTVBoxObject(env, url.pathname.slice(1), request, context);
   }
   if (request.method === "GET" && url.pathname === "/") {
     return userSubmissionPage("login");
@@ -142,11 +173,32 @@ async function route(request: Request, env: Env): Promise<Response> {
     const user = await requireUser(request, env.DB);
     return json(await listUserSubmissions(env.DB, user.id));
   }
+  if (request.method === "GET" && apiPath === "/v1/user/pushes") {
+    const user = await requireUser(request, env.DB);
+    return json(await listUserResourcePushes(
+      env.DB,
+      user.id,
+      parsePage(url.searchParams.get("page")),
+      parsePageSize(url.searchParams.get("page_size")),
+    ));
+  }
+  if (request.method === "POST" && apiPath === "/v1/user/pushes/py") {
+    const user = await requireUser(request, env.DB);
+    const push = await createPythonPush(env, user, await request.formData());
+    notifyResourceReceived(context, env, push);
+    return json(publicPush(push), 202);
+  }
+  if (request.method === "POST" && apiPath === "/v1/user/pushes/cms") {
+    const user = await requireUser(request, env.DB);
+    const push = await createCMSPush(env.DB, user, await readJSON(request));
+    notifyResourceReceived(context, env, push);
+    return json(publicPush(push), 202);
+  }
   if (request.method === "GET" && apiPath === "/v1/plugin-types") {
     return json(await listPluginTypes(env.DB), 200, { "cache-control": "no-store" });
   }
   if (request.method === "POST" && apiPath === "/v1/user/plugins") {
-    return submitNewPlugin(request, env);
+    return submitNewPlugin(request, env, context);
   }
   if (request.method === "POST" && apiPath === "/v1/user/plugins/draft") {
     return saveNewDraft(request, env);
@@ -158,12 +210,32 @@ async function route(request: Request, env: Env): Promise<Response> {
     const user = await requireUser(request, env.DB);
     const items = await submitAllPluginDrafts(env.DB, user.id);
     if (!user.whitelisted) {
+      if (items.length > 0) {
+        scheduleEmail(context, env, {
+          to: user.email,
+          subject: `已提交 ${items.length} 个插件`,
+          title: "插件已进入审核队列",
+          lines: [`本次共提交 ${items.length} 个插件，审核完成后会再次通知你。`],
+        });
+        scheduleAdminEmail(context, env, `${items.length} 个插件待审核`, "收到批量插件提交", [
+          `提交用户：${user.nick} (${user.email})`,
+          `数量：${items.length}`,
+        ]);
+      }
       return json({ items, submitted_count: items.length }, 202);
     }
     const published = [];
     for (const item of items) {
       const release = await publishPendingSubmission(env, item.submission_id);
       published.push({ ...item, ...release, status: "accepted" });
+    }
+    if (published.length > 0) {
+      scheduleEmail(context, env, {
+        to: user.email,
+        subject: `已发布 ${published.length} 个插件`,
+        title: "批量发布已完成",
+        lines: [`本次共发布 ${published.length} 个插件。`],
+      });
     }
     return json({
       items: published,
@@ -201,6 +273,42 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method === "GET" && apiPath === "/v1/admin/reviews") {
     requireAdmin(request, env);
     return json(await listPendingSubmissions(env.DB, parseLimit(url.searchParams.get("limit"))));
+  }
+  if (request.method === "GET" && apiPath === "/v1/admin/pushes") {
+    requireAdmin(request, env);
+    return json(await listPendingResourcePushes(
+      env.DB,
+      parsePage(url.searchParams.get("page")),
+      parsePageSize(url.searchParams.get("page_size")),
+    ));
+  }
+  if (request.method === "GET" && apiPath === "/v1/admin/resources") {
+    requireAdmin(request, env);
+    return json(await listResources(env.DB, {
+      type: parseResourceTypeFilter(url.searchParams.get("type")),
+      status: parseResourceStatus(url.searchParams.get("status")),
+      sort: parseResourceSort(url.searchParams.get("sort")),
+      page: parsePage(url.searchParams.get("page")),
+      pageSize: parsePageSize(url.searchParams.get("page_size")),
+    }));
+  }
+  if (apiPath === "/v1/admin/tvbox/settings") {
+    requireAdmin(request, env);
+    if (request.method === "GET") return json(await getTVBoxSettings(env.DB));
+    if (request.method === "PUT") return json(await saveTVBoxSettings(env.DB, await readJSON(request)));
+  }
+  if (request.method === "POST" && apiPath === "/v1/admin/tvbox/generate") {
+    requireAdmin(request, env);
+    return json(await generateTVBoxConfig(env, request.url));
+  }
+  if (request.method === "POST" && apiPath === "/v1/admin/tvbox/retry-plugin-sync") {
+    requireAdmin(request, env);
+    return json(await retryPluginSync(env, request.url));
+  }
+  if (apiPath === "/v1/admin/settings/email") {
+    requireAdmin(request, env);
+    if (request.method === "GET") return json({ enabled: await getEmailSetting(env.DB) });
+    if (request.method === "PUT") return json({ enabled: await saveEmailSetting(env.DB, parseEnabled(await readJSON(request))) });
   }
   if (request.method === "GET" && apiPath === "/v1/plugins") {
     return catalog(url, env);
@@ -242,6 +350,53 @@ async function route(request: Request, env: Env): Promise<Response> {
     }
   }
   if (
+    request.method === "POST"
+    && segments.length === 5
+    && segments[0] === "v1"
+    && segments[1] === "admin"
+    && segments[2] === "pushes"
+  ) {
+    requireAdmin(request, env);
+    const id = decodeURIComponent(segments[3] ?? "");
+    if (segments[4] === "accept") {
+      const push = await acceptResourcePush(env, id, await readOptionalJSON(request));
+      notifyResourceReviewed(context, env, push);
+      return json(publicPush(push));
+    }
+    if (segments[4] === "reject") {
+      const push = await rejectResourcePush(env, id, await readJSON(request));
+      notifyResourceReviewed(context, env, push);
+      return json(publicPush(push));
+    }
+  }
+  if (
+    segments.length === 6
+    && segments[0] === "v1"
+    && segments[1] === "admin"
+    && segments[2] === "resources"
+  ) {
+    requireAdmin(request, env);
+    const type = parseResourceType(segments[3]);
+    const id = decodeURIComponent(segments[4] ?? "");
+    if (request.method === "PUT" && segments[5] === "enabled") {
+      await setResourceEnabled(env.DB, type, id, parseEnabled(await readJSON(request)));
+      return json({ id, resource_type: type, status: "updated" });
+    }
+  }
+  if (
+    request.method === "DELETE"
+    && segments.length === 5
+    && segments[0] === "v1"
+    && segments[1] === "admin"
+    && segments[2] === "resources"
+  ) {
+    requireAdmin(request, env);
+    const type = parseResourceType(segments[3]);
+    const id = decodeURIComponent(segments[4] ?? "");
+    await deleteResource(env, type, id);
+    return new Response(null, { status: 204 });
+  }
+  if (
     request.method === "DELETE"
     && segments.length === 4
     && segments[0] === "v1"
@@ -275,7 +430,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     && segments[4] === "unpublish"
   ) {
     const pluginID = parsePluginID(decodeURIComponent(segments[3] ?? ""));
-    return unpublish(request, pluginID, env);
+    return unpublish(request, pluginID, env, context);
   }
   if (
     request.method === "POST"
@@ -323,6 +478,7 @@ async function route(request: Request, env: Env): Promise<Response> {
       request,
       pluginID,
       env,
+      context,
     );
   }
   if (
@@ -352,6 +508,7 @@ async function route(request: Request, env: Env): Promise<Response> {
       decodeURIComponent(segments[3] ?? ""),
       segments[4] ?? "",
       env,
+      context,
     );
   }
   return error("not_found", "Route not found.", 404);
@@ -427,7 +584,12 @@ async function installEvent(request: Request, pluginID: string, env: Env): Promi
   return new Response(null, { status: 204 });
 }
 
-async function submitPlugin(request: Request, pluginID: string, env: Env): Promise<Response> {
+async function submitPlugin(
+  request: Request,
+  pluginID: string,
+  env: Env,
+  context: ExecutionContext,
+): Promise<Response> {
   const user = await requireUser(request, env.DB);
   const submittedAt = new Date().toISOString();
   const parsed = parsePublishRequest(await readJSON(request), pluginID, submittedAt);
@@ -447,10 +609,14 @@ async function submitPlugin(request: Request, pluginID: string, env: Env): Promi
   ) {
     await requirePluginTypeExists(env.DB, parsed.request.manifest.type);
   }
-  return finishPluginSubmission(env, user, parsed, pluginID);
+  return finishPluginSubmission(env, user, parsed, pluginID, context);
 }
 
-async function submitNewPlugin(request: Request, env: Env): Promise<Response> {
+async function submitNewPlugin(
+  request: Request,
+  env: Env,
+  context: ExecutionContext,
+): Promise<Response> {
   const user = await requireUser(request, env.DB);
   const value = await readJSON(request);
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -486,7 +652,7 @@ async function submitNewPlugin(request: Request, env: Env): Promise<Response> {
   }
   await requirePluginTypeExists(env.DB, parsed.request.manifest.type);
   await claimPluginID(env.DB, pluginID, user.id);
-  return finishPluginSubmission(env, user, parsed, pluginID);
+  return finishPluginSubmission(env, user, parsed, pluginID, context);
 }
 
 async function saveNewDraft(request: Request, env: Env): Promise<Response> {
@@ -645,9 +811,10 @@ async function saveExistingDraft(
 
 async function finishPluginSubmission(
   env: Env,
-  user: { id: string; nick: string; whitelisted: boolean },
+  user: { id: string; email: string; nick: string; whitelisted: boolean },
   parsed: ReturnType<typeof parsePublishRequest>,
   pluginID: string,
+  context: ExecutionContext,
 ): Promise<Response> {
   rejectPrivateSubmission(parsed.request.visibility);
   if (parsed.metadata.author !== user.nick) {
@@ -675,6 +842,12 @@ async function finishPluginSubmission(
       manifestJSON,
       await sha256(manifestJSON),
     );
+    scheduleEmail(context, env, {
+      to: user.email,
+      subject: `插件已发布：${parsed.metadata.name}`,
+      title: "你的插件已自动发布",
+      lines: [`插件：${parsed.metadata.name}`, `版本：${parsed.metadata.version}`],
+    });
     return json({
       submission_id: submissionID,
       plugin_id: pluginID,
@@ -682,6 +855,17 @@ async function finishPluginSubmission(
       status: "accepted",
     }, 201);
   }
+  scheduleEmail(context, env, {
+    to: user.email,
+    subject: `插件已提交：${parsed.metadata.name}`,
+    title: "我们已收到你的插件提交",
+    lines: [`插件：${parsed.metadata.name}`, `版本：${parsed.metadata.version}`, "审核后会再次通知你。"],
+  });
+  scheduleAdminEmail(context, env, `插件待审核：${parsed.metadata.name}`, "收到新的插件提交", [
+    `提交用户：${user.nick} (${user.email})`,
+    `插件：${parsed.metadata.name}`,
+    `版本：${parsed.metadata.version}`,
+  ]);
   return json({ submission_id: submissionID, plugin_id: pluginID, status: "pending" }, 202);
 }
 
@@ -751,19 +935,38 @@ async function reviewSubmission(
   submissionID: string,
   action: string,
   env: Env,
+  context: ExecutionContext,
 ): Promise<Response> {
   requireAdmin(request, env);
+  const pending = await getPendingSubmission(env.DB, submissionID);
+  if (pending === null) {
+    return error("submission_not_found", "Pending submission not found.", 404);
+  }
+  const pendingManifest = JSON.parse(pending.manifest_json) as Record<string, unknown>;
+  const pluginName = typeof pendingManifest.name === "string" ? pendingManifest.name : pending.plugin_id;
   if (action === "reject") {
     const reason = parseReviewReason(await readJSON(request));
     if (!await rejectSubmission(env.DB, submissionID, reason)) {
       return error("submission_not_found", "Pending submission not found.", 404);
     }
+    scheduleEmail(context, env, {
+      to: pending.email,
+      subject: `插件未通过：${pluginName}`,
+      title: "你的插件提交未被接受",
+      lines: [`插件：${pluginName}`, `原因：${reason}`],
+    });
     return json({ id: submissionID, status: "rejected", reason });
   }
   if (action !== "accept") {
     return error("not_found", "Review action not found.", 404);
   }
   const published = await publishPendingSubmission(env, submissionID);
+  scheduleEmail(context, env, {
+    to: pending.email,
+    subject: `插件已通过：${pluginName}`,
+    title: "你的插件已发布",
+    lines: [`插件：${pluginName}`, `版本：${published.version}`],
+  });
   return json({
     id: submissionID,
     status: "accepted",
@@ -810,11 +1013,25 @@ async function publishPendingSubmission(
   };
 }
 
-async function unpublish(request: Request, pluginID: string, env: Env): Promise<Response> {
+async function unpublish(
+  request: Request,
+  pluginID: string,
+  env: Env,
+  context: ExecutionContext,
+): Promise<Response> {
   requireAdmin(request, env);
   const reason = parseReviewReason(await readJSON(request));
+  const recipient = await getPluginNotificationRecipient(env.DB, pluginID);
   if (!await unpublishPlugin(env.DB, pluginID, reason)) {
     return error("plugin_not_found", "Published plugin not found.", 404);
+  }
+  if (recipient) {
+    scheduleEmail(context, env, {
+      to: recipient.email,
+      subject: `插件已下架：${recipient.name}`,
+      title: "你的插件已被管理员下架",
+      lines: [`插件：${recipient.name}`, `版本：${recipient.version}`, `原因：${reason}`],
+    });
   }
   return json({ id: pluginID, status: "unpublished", reason });
 }
@@ -874,6 +1091,92 @@ function requireAdmin(request: Request, env: Env): void {
   if (request.headers.get("authorization") !== `Bearer ${env.ADMIN_TOKEN}`) {
     throw new HTTPError(401, "unauthorized", "A valid admin bearer token is required.");
   }
+}
+
+async function readOptionalJSON(request: Request): Promise<unknown> {
+  if (request.headers.get("content-length") === "0" || !request.headers.get("content-type")) {
+    return {};
+  }
+  return readJSON(request);
+}
+
+function parseResourceType(value: string | undefined): ResourceType {
+  if (value === "py" || value === "cms") return value;
+  throw new HTTPError(400, "invalid_resource_type", "resource type must be py or cms.");
+}
+
+function parseResourceTypeFilter(value: string | null): "all" | ResourceType {
+  if (value === null || value === "" || value === "all") return "all";
+  return parseResourceType(value);
+}
+
+function parseResourceStatus(value: string | null): "all" | "enabled" | "disabled" {
+  if (value === null || value === "" || value === "all") return "all";
+  if (value === "enabled" || value === "disabled") return value;
+  throw new HTTPError(400, "invalid_status", "status must be all, enabled, or disabled.");
+}
+
+function parseResourceSort(
+  value: string | null,
+): "updated_desc" | "updated_asc" | "name_asc" | "name_desc" {
+  if (value === null || value === "") return "updated_desc";
+  if (["updated_desc", "updated_asc", "name_asc", "name_desc"].includes(value)) {
+    return value as "updated_desc" | "updated_asc" | "name_asc" | "name_desc";
+  }
+  throw new HTTPError(400, "invalid_sort", "Unsupported resource sort order.");
+}
+
+function parseEnabled(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new HTTPError(400, "invalid_body", "Request body must be a JSON object.");
+  }
+  const enabled = (value as Record<string, unknown>).enabled;
+  if (typeof enabled !== "boolean") {
+    throw new HTTPError(400, "invalid_field", "enabled must be a boolean.");
+  }
+  return enabled;
+}
+
+function resourceLabel(push: ResourcePushRow): string {
+  return push.resource_type === "py" ? push.file_name ?? "Python 脚本" : push.cms_name ?? "CMS";
+}
+
+function notifyResourceReceived(
+  context: ExecutionContext,
+  env: Env,
+  push: ResourcePushRow,
+): void {
+  const label = resourceLabel(push);
+  scheduleEmail(context, env, {
+    to: push.email,
+    subject: `Push 已收到：${label}`,
+    title: "我们已收到你的 Push",
+    lines: [`资源：${label}`, "管理员处理后，你会再次收到邮件，也可以在提交记录中查看状态。"],
+  });
+  scheduleAdminEmail(context, env, `待处理 Push：${label}`, "有新的资源 Push", [
+    `提交用户：${push.nick} (${push.email})`,
+    `资源类型：${push.resource_type.toUpperCase()}`,
+    `资源：${label}`,
+  ]);
+}
+
+function notifyResourceReviewed(
+  context: ExecutionContext,
+  env: Env,
+  push: ResourcePushRow,
+): void {
+  const accepted = push.status === "accepted";
+  const label = resourceLabel(push);
+  scheduleEmail(context, env, {
+    to: push.email,
+    subject: `Push ${accepted ? "已接受" : "已拒绝"}：${label}`,
+    title: accepted ? "你的 Push 已被接受" : "你的 Push 未被接受",
+    lines: [
+      `资源：${label}`,
+      ...(push.rejection_reason ? [`原因：${push.rejection_reason}`] : []),
+      ...(push.review_note ? [`管理员备注：${push.review_note}`] : []),
+    ],
+  });
 }
 
 async function sha256(value: string): Promise<string> {

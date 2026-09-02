@@ -1,6 +1,11 @@
 export interface Env {
   DB: D1Database;
+  STORAGE: R2Bucket;
   ADMIN_TOKEN?: string;
+  PUBLIC_ASSET_BASE_URL?: string;
+  RESEND_API_KEY?: string;
+  RESEND_FROM_EMAIL?: string;
+  ADMIN_NOTIFY_EMAIL?: string;
 }
 
 export type Platform = "ios" | "tvos";

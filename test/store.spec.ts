@@ -402,6 +402,20 @@ describe("Plugin Store API", () => {
       `https://example.com/api/v1/plugins/${directResult.plugin_id}/manifest`,
     )).status).toBe(200);
 
+    const directUpdate = await submitUserManifest({
+      ...manifest,
+      id: directResult.plugin_id,
+      author: "TrustedAuthor",
+      name: "Trusted Direct Update",
+      version: "1.1.0",
+    }, cookie);
+    expect(directUpdate.status).toBe(201);
+    expect(await fetchWorker("https://example.com/api/v1/user/me", {
+      headers: { cookie },
+    }).then((response) => response.json())).toMatchObject({
+      user: { contribution_points: 1 },
+    });
+
     const imported = await fetchWorker(
       "https://example.com/api/v1/user/plugins/import",
       {
@@ -433,6 +447,12 @@ describe("Plugin Store API", () => {
     expect((await fetchWorker(
       `https://example.com/api/v1/plugins/${importedResult.items[0]?.plugin_id}/manifest`,
     )).status).toBe(200);
+
+    expect(await fetchWorker("https://example.com/api/v1/user/me", {
+      headers: { cookie },
+    }).then((response) => response.json())).toMatchObject({
+      user: { contribution_points: 2 },
+    });
 
     const queue = await fetchWorker(
       "https://example.com/api/v1/admin/reviews?limit=100",
@@ -763,6 +783,11 @@ describe("Plugin Store API", () => {
     );
     expect(bulkSubmit.status).toBe(202);
     expect(await bulkSubmit.json()).toMatchObject({ items: [], submitted_count: 0 });
+    expect(await fetchWorker("https://example.com/api/v1/user/me", {
+      headers: { cookie },
+    }).then((response) => response.json())).toMatchObject({
+      user: { contribution_points: 0 },
+    });
 
     const privateBody = {
       manifest: {
@@ -1212,7 +1237,7 @@ describe("Plugin Store API", () => {
     expect(html).toContain("确认下架");
     expect(html).toContain("下架原因");
     expect(html).toContain("待审核投稿");
-    expect(html).toContain("已上架插件");
+    expect(html).toContain("已合并插件");
     expect(html).toContain("用户统计");
     expect(html).toContain("贡献用户 Top 5");
     expect(html).toContain("白名单管理");
@@ -1223,11 +1248,20 @@ describe("Plugin Store API", () => {
     expect(html).toContain("拒绝原因");
     expect(html).toContain("插件类型");
     expect(html).toContain('id="plugin-type-form"');
+    expect(html).toContain('id="plugin-pending-tab"');
+    expect(html).toContain('id="plugin-published-tab"');
     expect(html).toContain('id="admin-sidebar"');
     expect(html).toContain('data-panel="settings"');
     expect(html).toContain('id="review-copy"');
     expect(html).toContain('id="users-previous"');
     expect(html).toContain('id="users-next"');
+    expect(html).toContain('data-panel="resources"');
+    expect(html).toContain('id="resource-pending-tab"');
+    expect(html).toContain('id="resource-list-tab"');
+    expect(html).toContain('id="resources-pagination"');
+    expect(html).toContain('id="toast"');
+    expect(html).toContain('id="email-enabled"');
+    expect(html).toContain('sessionStorage.getItem("hawk_admin_token")');
 
     const submitPage = await fetchWorker("https://example.com/submit");
     expect(submitPage.status).toBe(200);
@@ -1254,12 +1288,18 @@ describe("Plugin Store API", () => {
     expect(submitHTML).toContain("查看配置");
     expect(submitHTML).toContain("复制配置");
     expect(submitHTML).toContain("function highlightJSON");
+    expect(submitHTML).toContain("已关联");
+    expect(submitHTML).not.toContain("function nextPatchVersion");
     expect(submitHTML).toContain("用作模板");
     expect(submitHTML).toContain("function useAsTemplate");
     expect(submitHTML).toContain('<select id="plugin-type"');
     expect(submitHTML).toContain('id="plugin-action-menu"');
     expect(submitHTML).not.toContain('id="plugin-menu-dialog"');
-    expect(submitHTML).toContain('class="notice list-footer"');
+    expect(submitHTML).toContain('id="toast"');
+    expect(submitHTML).toContain('id="new-push"');
+    expect(submitHTML).toContain('id="push-dialog"');
+    expect(submitHTML).not.toContain('id="all-pushes"');
+    expect(submitHTML).not.toContain('id="push-history-dialog"');
     expect(submitHTML).not.toContain("<th>通过版本</th>");
 
     const registerPage = await fetchWorker("https://example.com/register");

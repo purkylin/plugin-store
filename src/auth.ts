@@ -10,6 +10,7 @@ export interface AuthenticatedUser {
   email: string;
   nick: string;
   whitelisted: boolean;
+  contribution_points: number;
 }
 
 interface UserRow {
@@ -20,6 +21,7 @@ interface UserRow {
   password_hash: string;
   password_iterations: number;
   is_whitelisted: number;
+  contribution_points: number;
 }
 
 export async function registerUser(
@@ -71,7 +73,7 @@ export async function registerUser(
     throw new HTTPError(409, "user_already_exists", "email or nick is already registered.");
   }
   return {
-    user: { id, email, nick, whitelisted: false },
+    user: { id, email, nick, whitelisted: false, contribution_points: 0 },
     token: session.token,
     expires_at: session.expiresAt,
   };
@@ -86,7 +88,7 @@ export async function loginUser(
   const password = requireString(body.password, "password");
   const user = await db.prepare(`
     SELECT id, email, nick, password_salt, password_hash,
-           password_iterations, is_whitelisted
+           password_iterations, is_whitelisted, contribution_points
     FROM users
     WHERE email = ? COLLATE NOCASE
   `).bind(email).first<UserRow>();
@@ -124,7 +126,7 @@ export async function requireUser(
   }
   const tokenHash = await sha256(token);
   const user = await db.prepare(`
-    SELECT u.id, u.email, u.nick, u.is_whitelisted
+    SELECT u.id, u.email, u.nick, u.is_whitelisted, u.contribution_points
     FROM user_sessions s
     JOIN users u ON u.id = s.user_id
     WHERE s.token_hash = ? AND s.expires_at > ?
@@ -133,6 +135,7 @@ export async function requireUser(
     email: string;
     nick: string;
     is_whitelisted: number;
+    contribution_points: number;
   }>();
   if (user === null) {
     throw new HTTPError(401, "unauthorized", "The user session is invalid or expired.");
@@ -313,12 +316,13 @@ function decodeBase64URL(value: string): Uint8Array {
 }
 
 function toAuthenticatedUser(
-  user: { id: string; email: string; nick: string; is_whitelisted: number },
+  user: { id: string; email: string; nick: string; is_whitelisted: number; contribution_points: number },
 ): AuthenticatedUser {
   return {
     id: user.id,
     email: user.email,
     nick: user.nick,
     whitelisted: user.is_whitelisted === 1,
+    contribution_points: user.contribution_points,
   };
 }

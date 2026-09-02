@@ -1,1 +1,14 @@
+# Keep this file as a template only. Copy it to .dev.vars and replace every
+# placeholder before running the local Worker. Never commit .dev.vars.
+
+# Required for administrator API requests and the /admin dashboard.
 ADMIN_TOKEN=replace-with-a-long-random-token
+
+# Optional Resend settings. Leave these blank to run without email delivery.
+RESEND_API_KEY=re_replace-with-resend-key
+RESEND_FROM_EMAIL=Hawk Plugin Store <noreply@example.com>
+ADMIN_NOTIFY_EMAIL=admin@example.com
+
+# Optional. Set this only when local responses should advertise a custom asset
+# host. Wrangler local development otherwise uses the local Worker origin.
+# PUBLIC_ASSET_BASE_URL=https://assets.example.com
