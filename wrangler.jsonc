@@ -1,10 +1,11 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "hawk-plugin-store",
+  "name": "store",
   "main": "src/index.ts",
   "compatibility_date": "2026-07-24",
   "vars": {
-    "PUBLIC_ASSET_BASE_URL": "https://assets.example.com"
+    "PUBLIC_ASSET_BASE_URL": "https://cdn.9228.eu",
+    "AUTH_BASE_URL": "https://store.zo0.workers.dev"
   },
   "observability": {
     "enabled": true
