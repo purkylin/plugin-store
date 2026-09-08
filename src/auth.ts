@@ -1,6 +1,6 @@
 import { HTTPError } from "./http";
 
-const passwordIterations = 100_000;
+export const passwordIterations = 100_000;
 const sessionLifetimeMilliseconds = 30 * 24 * 60 * 60 * 1000;
 const sessionCookieName = "hawk_session";
 const encoder = new TextEncoder();
@@ -194,7 +194,7 @@ async function prepareSession(userID: string) {
   return { token, tokenHash: await sha256(token), expiresAt, userID };
 }
 
-async function hashPassword(password: string, salt: string): Promise<string> {
+export async function hashPassword(password: string, salt: string): Promise<string> {
   return hashPasswordWithIterations(password, salt, passwordIterations);
 }
 
@@ -241,7 +241,7 @@ async function hashPasswordWithIterations(
   return encodeBase64URL(new Uint8Array(bits));
 }
 
-function parseEmail(value: unknown): string {
+export function parseEmail(value: unknown): string {
   const email = requireString(value, "email").trim().toLowerCase();
   if (email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return email;
@@ -249,7 +249,7 @@ function parseEmail(value: unknown): string {
   throw new HTTPError(400, "invalid_email", "email must be a valid email address.");
 }
 
-function parseNick(value: unknown): string {
+export function parseNick(value: unknown): string {
   const nick = requireString(value, "nick").trim();
   if (
     nick.length >= 2
@@ -265,7 +265,7 @@ function parseNick(value: unknown): string {
   );
 }
 
-function parsePassword(value: unknown): string {
+export function parsePassword(value: unknown): string {
   const password = requireString(value, "password");
   if (password.length >= 8 && password.length <= 128) {
     return password;
@@ -273,27 +273,27 @@ function parsePassword(value: unknown): string {
   throw new HTTPError(400, "invalid_password", "password must be 8-128 characters.");
 }
 
-function requireRecord(value: unknown): Record<string, unknown> {
+export function requireRecord(value: unknown): Record<string, unknown> {
   if (typeof value === "object" && value !== null && !Array.isArray(value)) {
     return value as Record<string, unknown>;
   }
   throw new HTTPError(400, "invalid_body", "Request body must be a JSON object.");
 }
 
-function requireString(value: unknown, field: string): string {
+export function requireString(value: unknown, field: string): string {
   if (typeof value === "string" && value.length > 0) {
     return value;
   }
   throw new HTTPError(400, "invalid_field", `${field} must be a non-empty string.`);
 }
 
-function randomToken(length: number): string {
+export function randomToken(length: number): string {
   const bytes = new Uint8Array(length);
   crypto.getRandomValues(bytes);
   return encodeBase64URL(bytes);
 }
 
-async function sha256(value: string): Promise<string> {
+export async function sha256(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", encoder.encode(value));
   return encodeBase64URL(new Uint8Array(digest));
 }

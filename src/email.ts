@@ -5,6 +5,7 @@ export interface EmailMessage {
   subject: string;
   title: string;
   lines: string[];
+  action?: { label: string; url: string };
 }
 
 export function scheduleEmail(
@@ -39,7 +40,7 @@ export function scheduleAdminEmail(
   scheduleEmail(context, env, { to: env.ADMIN_NOTIFY_EMAIL, subject, title, lines });
 }
 
-async function sendEmail(env: Env, message: EmailMessage): Promise<void> {
+export async function sendEmail(env: Env, message: EmailMessage): Promise<void> {
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -51,19 +52,20 @@ async function sendEmail(env: Env, message: EmailMessage): Promise<void> {
       to: [message.to],
       subject: message.subject,
       text: [message.title, "", ...message.lines].join("\n"),
-      html: renderHTML(message.title, message.lines),
+      html: renderHTML(message.title, message.lines, message.action),
     }),
   });
   if (!response.ok) {
-    throw new Error(`Resend returned HTTP ${response.status}: ${await response.text()}`);
+    throw new Error(`Resend returned HTTP ${response.status}`);
   }
 }
 
-function renderHTML(title: string, lines: string[]): string {
+function renderHTML(title: string, lines: string[], action?: EmailMessage["action"]): string {
   return [
     '<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;color:#172331;line-height:1.6">',
     `<h2>${escapeHTML(title)}</h2>`,
     ...lines.map((line) => `<p>${escapeHTML(line)}</p>`),
+    ...(action ? [`<p><a href="${escapeHTML(action.url)}" style="display:inline-block;padding:12px 20px;background:#176b55;color:white;border-radius:8px;text-decoration:none">${escapeHTML(action.label)}</a></p>`] : []),
     "</div>",
   ].join("");
 }

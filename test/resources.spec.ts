@@ -1,18 +1,15 @@
+import { registerAndActivate } from "./verified-account";
 import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 describe("Resource Push and TVBox", () => {
   it("accepts Python file names containing Unicode, spaces, and parentheses", async () => {
-    const registration = await fetchWorker("https://example.com/api/v1/auth/register", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
+    const registration = await registerAndActivate({
         email: "unicode-file@example.com",
         nick: "UnicodeFile",
         password: "unicode-file-password",
         password_confirmation: "unicode-file-password",
-      }),
-    });
+      });
     const cookie = registration.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
     const form = new FormData();
     form.append("file", new File(["print('unicode')\n"], "豆瓣 资源 (新版).py", { type: "text/x-python" }));
@@ -30,16 +27,12 @@ describe("Resource Push and TVBox", () => {
   });
 
   it("reviews PY and CMS resources and generates a stable TVBox configuration", async () => {
-    const registration = await fetchWorker("https://example.com/api/v1/auth/register", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
+    const registration = await registerAndActivate({
         email: "resource-author@example.com",
         nick: "ResourceAuthor",
         password: "resource-test-password",
         password_confirmation: "resource-test-password",
-      }),
-    });
+      });
     expect(registration.status).toBe(201);
     const cookie = registration.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
 

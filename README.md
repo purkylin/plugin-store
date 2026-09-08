@@ -77,8 +77,8 @@ before deploying this repository to another Cloudflare account.
    npx wrangler secret put ADMIN_NOTIFY_EMAIL
    ```
 
-   `ADMIN_TOKEN` is required. The Resend secrets are optional. Email is sent
-   only when the admin email switch is enabled and the Resend settings exist.
+   `ADMIN_TOKEN` is required. The Resend secrets are optional. Plugin and Push notifications require the admin email switch.
+   Password recovery emails are independent of this switch.
 
 6. Deploy:
 

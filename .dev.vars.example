@@ -12,3 +12,6 @@ ADMIN_NOTIFY_EMAIL=admin@example.com
 # Optional. Set this only when local responses should advertise a custom asset
 # host. Wrangler local development otherwise uses the local Worker origin.
 # PUBLIC_ASSET_BASE_URL=https://assets.example.com
+
+# Required for registration activation and password recovery. Trusted HTTPS origin of the user portal.
+# AUTH_BASE_URL=https://plugins.example.com

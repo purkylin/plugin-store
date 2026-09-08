@@ -306,9 +306,8 @@ export async function acceptResourcePush(
       ),
       acceptedStatement(env.DB, pushID, reviewNote, reviewedAt),
     ]);
-    await env.STORAGE.delete(stagingKey).catch((cause: unknown) => {
-      console.error("Could not delete staged Python file", cause);
-    });
+    // Retain the immutable upload for author history and review previews.
+
   } else {
     const name = parseOptionalText(body.cms_name, "cms_name", 100) ?? push.cms_name as string;
     const requestedSiteKey = body.site_key === undefined ? null : parseSiteKey(body.site_key, pushID);
@@ -395,11 +394,7 @@ export async function rejectResourcePush(
   if ((result.meta.changes ?? 0) === 0) {
     throw new HTTPError(404, "push_not_found", "Pending Push not found.");
   }
-  if (push.staging_r2_key) {
-    await env.STORAGE.delete(push.staging_r2_key).catch((cause: unknown) => {
-      console.error("Could not delete rejected staged file", cause);
-    });
-  }
+  // Rejected uploads remain available to their author and administrators.
   return requireResourcePush(env.DB, pushID);
 }
 
@@ -691,4 +686,28 @@ function parseBoolean(value: unknown, defaultValue: boolean): boolean {
 
 function parseFormBoolean(value: FormDataEntryValue | null): boolean {
   return value === "true" || value === "1" || value === "on";
+}
+
+export async function readResourcePushContent(env: Env, id: string, userID?: string) {
+  const push = await getResourcePush(env.DB, id, false);
+  if (!push || (userID !== undefined && push.user_id !== userID)) {
+    throw new HTTPError(404, "push_not_found", "Push 不存在。");
+  }
+  const name = push.resource_type === "py" ? push.file_name : push.cms_name;
+  if (push.resource_type === "cms") {
+    return { name, resource_type: "cms", content: JSON.stringify({ name: push.cms_name, url: push.cms_url, note: push.user_note, is_adult: push.is_adult === 1 }, null, 2) };
+  }
+  let object = push.staging_r2_key ? await env.STORAGE.get(push.staging_r2_key) : null;
+  // Older reviews deleted their upload: only use the published version when
+  // its bytes match this submission, never silently display a newer version.
+  if (!object && push.status === "accepted" && push.script_key) {
+    object = await env.STORAGE.get(`tvbox/py/${push.script_key}.py`);
+  }
+  if (object) {
+    const bytes = new Uint8Array(await object.arrayBuffer());
+    if (await sha256Bytes(bytes) === push.sha256) {
+      return { name, resource_type: "py", content: new TextDecoder().decode(bytes), sha256: push.sha256 };
+    }
+  }
+  throw new HTTPError(410, "push_content_unavailable", "这条历史 Push 的原始内容已不可用，无法查看当时提交的版本。");
 }

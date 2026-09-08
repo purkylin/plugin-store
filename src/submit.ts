@@ -1,3 +1,4 @@
+import { pushPreviewDialog, pushPreviewScript, pushPreviewStyle } from "./push-preview";
 const template = String.raw`<!doctype html>
 <html lang="zh-Hant">
 <head>
@@ -44,6 +45,8 @@ const template = String.raw`<!doctype html>
     .auth-panel { padding: 4px; }
     .switch-link { margin-top: 14px; color: var(--muted); font-size: 13px; }
     .switch-link a { color: var(--blue); }
+    .login-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .login-actions a { color: var(--blue); font-size: 13px; }
     .field { margin-bottom: 15px; }
     label { display: block; color: #c3d6e4; font-size: 12px; font-weight: 700; margin-bottom: 7px; }
     .required::after { content: " *"; color: var(--danger); font-weight: bold; }
@@ -69,6 +72,7 @@ const template = String.raw`<!doctype html>
     .button.danger { color: #ffc3cb; border-color: rgba(255,125,141,.3); background: rgba(255,125,141,.07); }
     .button:disabled { opacity: .45; cursor: not-allowed; }
     .notice { min-height: 22px; margin-top: 10px; color: var(--muted); font-size: 13px; }
+    .auth-panel .notice:empty { display: none; }
     .notice.error { color: var(--danger); }
     .notice.ok { color: var(--accent); }
     .user-bar { flex-wrap: wrap; padding: 14px 20px; border-bottom: 1px solid var(--line); }
@@ -148,6 +152,7 @@ const template = String.raw`<!doctype html>
       .custom-value { grid-column: 1 / -1; grid-row: 2; }
       header { align-items: flex-start; }
     }
+    ${pushPreviewStyle}
   </style>
 </head>
 <body>
@@ -163,7 +168,7 @@ const template = String.raw`<!doctype html>
           <h3>已有账号</h3>
           <div class="field"><label class="required" for="login-email">Email</label><input id="login-email" type="email" required></div>
           <div class="field"><label class="required" for="login-password">密码</label><input id="login-password" type="password" minlength="8" required></div>
-          <button class="button primary" type="submit">登录</button>
+          <div class="login-actions"><button class="button primary" type="submit">登录</button><a href="/forgot-password">忘记密码？</a></div>
           <p class="notice" id="login-notice"></p>
           <p class="switch-link">没有账号？<a href="/register">注册账号</a></p>
         </form>
@@ -173,7 +178,7 @@ const template = String.raw`<!doctype html>
           <div class="field"><label class="required" for="register-nick">昵称 / Author</label><input id="register-nick" minlength="2" maxlength="40" required><span class="help">昵称全局唯一，并固定为插件 author。</span></div>
           <div class="field"><label class="required" for="register-password">密码</label><input id="register-password" type="password" minlength="8" maxlength="128" required></div>
           <div class="field"><label class="required" for="register-password-confirmation">确认密码</label><input id="register-password-confirmation" type="password" minlength="8" maxlength="128" required></div>
-          <button class="button primary" type="submit">注册并登录</button>
+          <button class="button primary" type="submit">注册并发送激活邮件</button>
           <p class="notice" id="register-notice"></p>
           <p class="switch-link">已有账号？<a href="/login">返回登录</a></p>
         </form>
@@ -196,7 +201,7 @@ const template = String.raw`<!doctype html>
 
       <section class="card" id="push-card" data-portal-page="pushes" hidden>
         <div class="card-head"><div><h2>Push 记录</h2><p class="subtitle">你提交的 Python 与 CMS 资源</p></div><button class="button primary" id="new-push" type="button" aria-label="新建 Push" title="新建 Push">＋</button></div>
-        <div class="table-wrap"><table class="compact-table"><thead><tr><th>资源</th><th>类型</th><th>状态</th><th>提交时间</th><th>说明</th></tr></thead><tbody id="push-rows"></tbody></table><div class="empty" id="push-empty">暂无 Push 记录</div></div>
+        <div class="table-wrap"><table class="compact-table"><thead><tr><th>资源</th><th>类型</th><th>状态</th><th>提交时间</th><th>说明</th><th>操作</th></tr></thead><tbody id="push-rows"></tbody></table><div class="empty" id="push-empty">暂无 Push 记录</div></div>
       </section>
       <section class="card" data-portal-page="plugins">
         <div class="card-head"><div><h2>我的插件</h2><p class="subtitle">管理公开投稿和仅供手动导入的私有插件</p></div><div class="actions"><button class="button" id="refresh" type="button">刷新</button><button class="button" id="import-plugins" type="button">批量导入 JSON</button><input id="import-json-file" type="file" accept=".json,application/json" hidden><button class="button" id="submit-all-drafts" type="button" disabled>全部提交审核</button><button class="button primary" id="new-plugin" type="button">新建插件</button></div></div>
@@ -296,7 +301,9 @@ const template = String.raw`<!doctype html>
       </div>
     </div>
   </dialog>
+  ${pushPreviewDialog}
   <script nonce="__NONCE__">
+    ${pushPreviewScript}
     const state = {
       user: null, submissions: [], pushes: [], pushType: "py", portalPage: "plugins", pluginTypes: [], editing: false, actionTrigger: null
     };
@@ -374,6 +381,10 @@ const template = String.raw`<!doctype html>
 
     async function authenticate(path, body, noticeID) {
       showNotice(noticeID, "", "");
+      const button = $(noticeID).closest("form").querySelector('button[type="submit"]');
+      if (button.disabled) return;
+      button.disabled = true;
+      let waitingForResend = false;
       try {
         const response = await fetch(path, {
           method: "POST",
@@ -383,10 +394,24 @@ const template = String.raw`<!doctype html>
         });
         if (!response.ok) throw await responseError(response);
         const result = await response.json();
+        if (result.verification_required) {
+          showNotice(noticeID, result.message, "ok");
+          waitingForResend = true;
+          let seconds = 60;
+          button.textContent = seconds + " 秒后可重新发送";
+          const timer = setInterval(() => {
+            seconds--;
+            button.textContent = seconds + " 秒后可重新发送";
+            if (seconds <= 0) { clearInterval(timer); button.disabled = false; button.textContent = "重新发送激活邮件"; }
+          }, 1000);
+          return;
+        }
         showPortal(result.user);
         await loadPortalData();
       } catch (error) {
         showNotice(noticeID, error.message, "error");
+      } finally {
+        if (!waitingForResend) button.disabled = false;
       }
     }
 
@@ -514,6 +539,9 @@ const template = String.raw`<!doctype html>
         const note = item.rejection_reason || item.review_note || item.user_note || "—";
         const row = document.createElement("tr");
         row.append(cell(item.name || "—"), cell(item.resource_type === "py" ? "Python" : "CMS"), cell(badge), cell(new Date(item.pushed_at).toLocaleString()), cell(note));
+        const view = document.createElement("button"); view.className = "button"; view.type = "button"; view.textContent = "查看内容";
+        view.addEventListener("click", () => openPushPreview(item, () => fetch("/api/v1/user/pushes/" + encodeURIComponent(item.id) + "/content", { credentials: "same-origin" })));
+        row.append(cell(view));
         tbody.append(row);
       }
     }
@@ -1390,7 +1418,7 @@ export function userSubmissionPage(mode: "login" | "register" = "login"): Respon
       .replaceAll("__AUTH_TITLE__", mode === "register" ? "注册账号" : "用户登录")
       .replaceAll(
         "__AUTH_SUBTITLE__",
-        mode === "register" ? "创建账号后即可提交插件" : "登录后管理你的插件投稿",
+        mode === "register" ? "验证邮箱并激活账号后即可提交插件" : "登录后管理你的插件投稿",
       )
       .replaceAll("__LOGIN_HIDDEN__", mode === "register" ? "hidden" : "")
       .replaceAll("__REGISTER_HIDDEN__", mode === "login" ? "hidden" : ""),

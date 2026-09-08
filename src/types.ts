@@ -3,6 +3,7 @@ export interface Env {
   STORAGE: R2Bucket;
   ADMIN_TOKEN?: string;
   PUBLIC_ASSET_BASE_URL?: string;
+  AUTH_BASE_URL?: string;
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string;
   ADMIN_NOTIFY_EMAIL?: string;

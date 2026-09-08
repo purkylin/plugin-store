@@ -1,3 +1,4 @@
+import { registerAndActivate } from "./verified-account";
 import { env, exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
@@ -265,7 +266,7 @@ describe("Plugin Store API", () => {
     expect(renamed.status).toBe(200);
     expect(await renamed.json()).toMatchObject({ value: "podcast", name: "音频播客" });
 
-    const registration = await authRequest("/api/v1/auth/register", {
+    const registration = await registerAndActivate({
       email: "typed-author@example.com",
       nick: "TypedAuthor",
       password: "typed-author-password",
@@ -332,7 +333,7 @@ describe("Plugin Store API", () => {
   });
 
   it("reports user contributions and lets whitelisted users publish without review", async () => {
-    const registration = await authRequest("/api/v1/auth/register", {
+    const registration = await registerAndActivate({
       email: "trusted-author@example.com",
       nick: "TrustedAuthor",
       password: "trusted-author-password",
@@ -504,7 +505,7 @@ describe("Plugin Store API", () => {
   });
 
   it("batch imports JSON plugins as drafts and replaces managed fields", async () => {
-    const registration = await authRequest("/api/v1/auth/register", {
+    const registration = await registerAndActivate({
       email: "batch-importer@example.com",
       nick: "BatchImporter",
       password: "batch-import-password",
@@ -645,7 +646,7 @@ describe("Plugin Store API", () => {
   });
 
   it("saves drafts without changing the approved store manifest", async () => {
-    const registration = await authRequest("/api/v1/auth/register", {
+    const registration = await registerAndActivate({
       email: "draft-author@example.com",
       nick: "DraftAuthor",
       password: "draft-author-password",
@@ -731,7 +732,7 @@ describe("Plugin Store API", () => {
   });
 
   it("keeps private plugins out of review and makes visibility immutable", async () => {
-    const registration = await authRequest("/api/v1/auth/register", {
+    const registration = await registerAndActivate({
       email: "private-author@example.com",
       nick: "PrivateAuthor",
       password: "private-author-password",
@@ -970,7 +971,7 @@ describe("Plugin Store API", () => {
   });
 
   it("registers users and gates user submissions behind admin review", async () => {
-    const registration = await authRequest("/api/v1/auth/register", {
+    const registration = await registerAndActivate({
       email: "author@example.com",
       nick: "ReviewAuthor",
       password: "correct-horse-battery",
@@ -1003,19 +1004,19 @@ describe("Plugin Store API", () => {
       ),
     });
 
-    expect((await authRequest("/api/v1/auth/register", {
+    expect((await registerAndActivate({
       email: "author@example.com",
       nick: "AnotherNick",
       password: "correct-horse-battery",
       password_confirmation: "correct-horse-battery",
     })).status).toBe(409);
-    expect((await authRequest("/api/v1/auth/register", {
+    expect((await registerAndActivate({
       email: "other@example.com",
       nick: "ReviewAuthor",
       password: "correct-horse-battery",
       password_confirmation: "correct-horse-battery",
     })).status).toBe(409);
-    expect((await authRequest("/api/v1/auth/register", {
+    expect((await registerAndActivate({
       email: "mismatch@example.com",
       nick: "MismatchAuthor",
       password: "correct-horse-battery",
@@ -1179,7 +1180,7 @@ describe("Plugin Store API", () => {
       published_version: null,
     });
 
-    const secondRegistration = await authRequest("/api/v1/auth/register", {
+    const secondRegistration = await registerAndActivate({
       email: "ownership-check@example.com",
       nick: "OwnershipCheck",
       password: "another-secure-password",
@@ -1305,7 +1306,7 @@ describe("Plugin Store API", () => {
     const registerPage = await fetchWorker("https://example.com/register");
     expect(registerPage.status).toBe(200);
     const registerHTML = await registerPage.text();
-    expect(registerHTML).toContain("注册并登录");
+    expect(registerHTML).toContain("注册并发送激活邮件");
     expect(registerHTML).toContain("确认密码");
     expect(registerHTML).toContain("已有账号？");
     expect(registerHTML).not.toContain("Token 仅保存在当前页面内存");
@@ -1425,7 +1426,7 @@ async function createReviewedPlugin(
   } = {},
 ): Promise<{ pluginID: string; cookie: string }> {
   const author = String(value.author);
-  const registration = await authRequest("/api/v1/auth/register", {
+  const registration = await registerAndActivate({
     email: `${author.toLowerCase()}@example.com`,
     nick: author,
     password: "reviewed-plugin-password",

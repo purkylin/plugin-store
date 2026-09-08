@@ -1,3 +1,4 @@
+import { pushPreviewDialog, pushPreviewScript, pushPreviewStyle } from "./push-preview";
 const template = String.raw`<!doctype html>
 <html lang="zh-Hant">
 <head>
@@ -299,6 +300,7 @@ const template = String.raw`<!doctype html>
       .form-actions { align-items: stretch; flex-direction: column; }
       .form-actions .button, .file-label { width: 100%; text-align: center; }
     }
+    ${pushPreviewStyle}
   </style>
 </head>
 <body>
@@ -583,7 +585,9 @@ const template = String.raw`<!doctype html>
     </div>
   </dialog>
 
+  ${pushPreviewDialog}
   <script nonce="__NONCE__">
+    ${pushPreviewScript}
     const state = {
       token: "", cursor: null, nextCursor: null, history: [], page: 1, items: [],
       editorMode: "form", editorManifest: {}, editingID: null, originalVersion: null,
@@ -1125,7 +1129,9 @@ const template = String.raw`<!doctype html>
         const actions = document.createElement("td"); actions.className = "actions";
         const accept = document.createElement("button"); accept.className = "button primary"; accept.type = "button"; accept.textContent = "接受"; accept.addEventListener("click", () => reviewResourcePush(item, true));
         const reject = document.createElement("button"); reject.className = "button danger"; reject.type = "button"; reject.textContent = "拒绝"; reject.addEventListener("click", () => reviewResourcePush(item, false));
-        actions.append(accept, reject); row.append(actions); tbody.append(row);
+        const view = document.createElement("button"); view.className = "button"; view.type = "button"; view.textContent = "查看内容";
+        view.addEventListener("click", () => openPushPreview(item, () => api("/api/v1/admin/pushes/" + encodeURIComponent(item.id) + "/content")));
+        actions.append(view, accept, reject); row.append(actions); tbody.append(row);
       }
     }
 

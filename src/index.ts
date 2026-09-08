@@ -1,10 +1,13 @@
+import { requestRegistration, verifyRegistration } from "./registration";
+import { emailVerificationPage } from "./email-verification-page";
+import { passwordResetPage } from "./password-reset-page";
+import { requestPasswordReset, resetPassword, resetRequestMessage } from "./password-reset";
 import { adminPage } from "./admin";
 import {
   clearSessionCookie,
   createSessionCookie,
   loginUser,
   logoutUser,
-  registerUser,
   requireUser,
 } from "./auth";
 import { error, handleError, HTTPError, json, readJSON, stringifyJSON } from "./http";
@@ -52,6 +55,7 @@ import {
   listResources,
   listUserResourcePushes,
   publicPush,
+  readResourcePushContent,
   rejectResourcePush,
   setResourceEnabled,
   type ResourcePushRow,
@@ -143,13 +147,27 @@ async function route(request: Request, env: Env, context: ExecutionContext): Pro
         : "login",
     );
   }
+  if (request.method === "GET" && ["/forgot-password", "/forgot-password/", "/reset-password", "/reset-password/"].includes(url.pathname)) {
+    return passwordResetPage(url.pathname.startsWith("/reset-password"));
+  }
+  if (request.method === "POST" && apiPath === "/v1/auth/forgot-password") {
+    requestPasswordReset(env, context, await readJSON(request), request.headers.get("CF-Connecting-IP") ?? "unknown");
+    return json({ message: resetRequestMessage }, 202, { "cache-control": "no-store" });
+  }
+  if (request.method === "POST" && apiPath === "/v1/auth/reset-password") {
+    await resetPassword(env, context, await readJSON(request), request.headers.get("CF-Connecting-IP") ?? "unknown");
+    return json({ message: "密码已更新，请重新登录。" }, 200, { "set-cookie": clearSessionCookie(request), "cache-control": "no-store" });
+  }
+  if (request.method === "GET" && ["/verify-email", "/verify-email/"].includes(url.pathname)) {
+    return emailVerificationPage();
+  }
   if (request.method === "POST" && apiPath === "/v1/auth/register") {
-    const session = await registerUser(env.DB, await readJSON(request));
-    return json(
-      { user: session.user, expires_at: session.expires_at },
-      201,
-      { "set-cookie": createSessionCookie(session.token, request) },
-    );
+    await requestRegistration(env, await readJSON(request), request.headers.get("CF-Connecting-IP") ?? "unknown");
+    return json({ message: "激活邮件已发送，请在 30 分钟内查收并确认激活。未收到邮件时，可在 60 秒后重新提交。", verification_required: true }, 202, { "cache-control": "no-store" });
+  }
+  if (request.method === "POST" && apiPath === "/v1/auth/verify-email") {
+    await verifyRegistration(env, await readJSON(request), request.headers.get("CF-Connecting-IP") ?? "unknown");
+    return json({ message: "邮箱已验证，账号已激活，请登录。" }, 200, { "cache-control": "no-store" });
   }
   if (request.method === "POST" && apiPath === "/v1/auth/login") {
     const session = await loginUser(env.DB, await readJSON(request));
@@ -172,6 +190,14 @@ async function route(request: Request, env: Env, context: ExecutionContext): Pro
   if (request.method === "GET" && apiPath === "/v1/user/submissions") {
     const user = await requireUser(request, env.DB);
     return json(await listUserSubmissions(env.DB, user.id));
+  }
+  if (request.method === "GET" && segments.length === 5 && segments[0] === "v1"
+    && ["user", "admin"].includes(segments[1] ?? "") && segments[2] === "pushes" && segments[4] === "content") {
+    const id = decodeURIComponent(segments[3] ?? "");
+    let userID: string | undefined;
+    if (segments[1] === "admin") requireAdmin(request, env);
+    else userID = (await requireUser(request, env.DB)).id;
+    return json(await readResourcePushContent(env, id, userID), 200, { "cache-control": "no-store", "x-content-type-options": "nosniff" });
   }
   if (request.method === "GET" && apiPath === "/v1/user/pushes") {
     const user = await requireUser(request, env.DB);

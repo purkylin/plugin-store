@@ -5,10 +5,75 @@ info:
 servers:
   - url: https://hawk-plugin-store.example.workers.dev/api/v1
 paths:
+  /auth/forgot-password:
+    post:
+      operationId: requestPasswordReset
+      summary: Request an emailed password reset link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        "202":
+          description: Generic response regardless of account existence or throttling; email delivery is asynchronous
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        "400":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /auth/reset-password:
+    post:
+      operationId: resetPassword
+      summary: Reset password and revoke all existing sessions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password, password_confirmation]
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+                  minLength: 8
+                  maxLength: 128
+                password_confirmation:
+                  type: string
+                  minLength: 8
+                  maxLength: 128
+      responses:
+        "200":
+          description: Password reset; sign in again
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        "400":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
   /auth/register:
     post:
-      operationId: registerUser
-      summary: Register a plugin author account
+      operationId: requestRegistration
+      summary: Send an activation email for a new plugin author account
       requestBody:
         required: true
         content:
@@ -16,11 +81,50 @@ paths:
             schema:
               $ref: "#/components/schemas/RegisterRequest"
       responses:
-        "201":
-          description: Registered and signed in
+        "202":
+          description: Activation email sent; account is created only after confirmation. No session cookie is issued.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, verification_required]
+                properties:
+                  message:
+                    type: string
+                  verification_required:
+                    type: boolean
+                    const: true
         "400":
           $ref: "#/components/responses/Error"
         "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /auth/verify-email:
+    post:
+      operationId: verifyRegistration
+      summary: Confirm email ownership and create the account without signing in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  description: Single-use activation token from the email, valid for 30 minutes
+      responses:
+        "200":
+          description: Account activated; sign in normally
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
           $ref: "#/components/responses/Error"
   /auth/login:
     post:
@@ -684,6 +788,78 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /user/pushes/{push_id}/content:
+    get:
+      operationId: getUserPushContent
+      summary: View the original submitted Python source or CMS configuration
+      security:
+        - userSession: []
+      parameters:
+        - name: push_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Original content, restricted to the owner or an administrator; never executed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, resource_type, content]
+                properties:
+                  name:
+                    type: [string, "null"]
+                  resource_type:
+                    type: string
+                    enum: [py, cms]
+                  content:
+                    type: string
+                  sha256:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "410":
+          description: Historical upload is unavailable and no matching published version exists
+  /admin/pushes/{push_id}/content:
+    get:
+      operationId: getAdminPushContent
+      summary: View the original submitted Python source or CMS configuration
+      security:
+        - adminToken: []
+      parameters:
+        - name: push_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Original content, restricted to the owner or an administrator; never executed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, resource_type, content]
+                properties:
+                  name:
+                    type: [string, "null"]
+                  resource_type:
+                    type: string
+                    enum: [py, cms]
+                  content:
+                    type: string
+                  sha256:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "410":
+          description: Historical upload is unavailable and no matching published version exists
   /user/pushes:
     get:
       operationId: listUserResourcePushes
