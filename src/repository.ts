@@ -1000,8 +1000,8 @@ export async function listUserSubmissions(db: D1Database, userID: string) {
     });
   }
   const settings = await db.prepare(
-    "SELECT linked_plugin_id FROM tvbox_settings WHERE id = 1",
-  ).first<{ linked_plugin_id: string | null }>();
+    "SELECT linked_plugin_id FROM user_tvbox_settings WHERE user_id = ?",
+  ).bind(userID).first<{ linked_plugin_id: string | null }>();
   const linkedPluginID = settings?.linked_plugin_id ?? null;
   return {
     items: [...plugins.values()]
@@ -1086,25 +1086,10 @@ export async function publishLinkedPluginRelease(
   checksum: string,
   syncedAt: string,
 ): Promise<void> {
-  const platforms = new Set(request.platforms ?? ["ios", "tvos"]);
-  const overwritePublicDraft = db.prepare(`
-    UPDATE plugin_drafts
-    SET manifest_json = ?, supports_ios = ?, supports_tvos = ?,
-        minimum_ios_version = ?, minimum_tvos_version = ?, saved_at = ?
-    WHERE plugin_id = ? AND is_private = 0
-  `).bind(
-    manifestJSON,
-    platforms.has("ios") ? 1 : 0,
-    platforms.has("tvos") ? 1 : 0,
-    request.minimum_ios_version ?? null,
-    request.minimum_tvos_version ?? null,
-    syncedAt,
-    metadata.id,
-  );
-  await db.batch([
-    ...buildPublishStatements(db, request, metadata, manifestJSON, checksum),
-    overwritePublicDraft,
-  ]);
+  // A linked-plugin sync creates a release from the currently published
+  // manifest. It must not replace an owner's unsaved draft: the draft may
+  // contain user-managed metadata such as icon, name, or description.
+  await db.batch(buildPublishStatements(db, request, metadata, manifestJSON, checksum));
 }
 
 export async function rejectSubmission(

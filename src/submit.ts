@@ -25,6 +25,8 @@ const template = String.raw`<!doctype html>
     button,input,textarea,select { font: inherit; }
     button { cursor: pointer; }
     .shell { width: min(1080px,calc(100% - 40px)); margin: 0 auto; padding: 34px 0 64px; }
+    body.portal-mode .shell { width: min(1440px, calc(100% - 48px)); max-width: none; min-height: 100vh; min-height: 100dvh; margin: 0 auto; padding: 24px 0 48px; }
+    body.portal-mode .shell > header { display: none; }
     header,.card-head,.actions,.user-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .actions { flex-wrap: wrap; }
     header { margin-bottom: 26px; }
@@ -77,9 +79,9 @@ const template = String.raw`<!doctype html>
     .notice.ok { color: var(--accent); }
     .user-bar { flex-wrap: wrap; padding: 14px 20px; border-bottom: 1px solid var(--line); }
     .user-identity { display: flex; align-items: center; gap: 14px; min-width: 0; }
-    .contribution-points { display: inline-flex; align-items: baseline; gap: 5px; padding: 5px 9px; border: 1px solid rgba(85,214,190,.24); border-radius: 999px; background: rgba(85,214,190,.08); white-space: nowrap; }
-    .contribution-points strong { color: var(--accent); font-size: 15px; line-height: 1; }
-    .contribution-points span { color: var(--muted); font-size: 11px; }
+    .contribution-points { display: inline-flex; align-items: center; gap: 5px; padding: 3px 4px; color: var(--muted); white-space: nowrap; }
+    .contribution-icon { color: #7f9aab; font-size: 13px; line-height: 1; }
+    .contribution-points strong { color: var(--muted); font-size: 12px; font-weight: 600; line-height: 1; }
     .table-wrap { overflow-x: auto; }
     table { width: 100%; min-width: 720px; border-collapse: collapse; }
     th,td { padding: 13px 20px; text-align: left; border-bottom: 1px solid var(--line); }
@@ -98,22 +100,27 @@ const template = String.raw`<!doctype html>
     .history ul { margin: 8px 0 0; padding-left: 18px; min-width: 250px; }
     .history li { margin: 5px 0; }
     .plugin-identity { display: flex; align-items: center; gap: 9px; min-width: 208px; }
+    .plugin-identity > div:last-child { min-width: 0; }
+    .plugin-name-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
     .plugin-name { font-weight: 700; }
     .plugin-id { color: var(--muted); font: 11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap: anywhere; }
     .market-dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px rgba(85,214,190,.75); }
-    .plugin-status-icon { width: 18px; flex: 0 0 18px; display: flex; align-items: center; justify-content: center; }
-    .private-lock { position: relative; width: 12px; height: 9px; margin-top: 4px; border-radius: 2px; background: #c6b4ff; }
+    .plugin-status-icon { width: 34px; flex: 0 0 34px; display: flex; align-items: center; justify-content: center; }
+    .plugin-icon { width: 34px; height: 34px; flex: 0 0 34px; display: block; border: 1px solid rgba(164,198,224,.18); border-radius: 9px; object-fit: cover; background: rgba(2,10,19,.45); }
+    .plugin-icon-fallback { display: grid; place-items: center; color: #b9a5ff; background: linear-gradient(145deg, rgba(124,101,224,.9), rgba(57,92,157,.95)); font-size: 17px; font-weight: 800; }
+    .private-lock { position: relative; flex: 0 0 auto; width: 12px; height: 9px; margin-top: 4px; border-radius: 2px; background: #c6b4ff; }
     .private-lock::before { content: ""; position: absolute; left: 2px; top: -7px; width: 6px; height: 7px; border: 2px solid #c6b4ff; border-bottom: 0; border-radius: 6px 6px 0 0; }
     .menu-trigger { min-width: 38px; padding: 7px 10px; font-size: 18px; line-height: 1; letter-spacing: 2px; }
     .action-menu { position: fixed; z-index: 40; min-width: 176px; padding: 6px; border: 1px solid var(--line); border-radius: 13px; background: #102238; box-shadow: 0 18px 48px rgba(0,0,0,.38); }
     .menu-item { display: block; width: 100%; padding: 9px 11px; border: 0; border-radius: 8px; color: var(--text); background: transparent; text-align: left; }
+    .menu-item:disabled { color: var(--muted); opacity: .55; cursor: not-allowed; }
     .menu-item:hover,.menu-item:focus-visible { outline: none; background: rgba(255,255,255,.07); }
     .menu-item.danger { color: #ffc3cb; }
     dialog {
       width: min(620px, calc(100% - 32px)); color: var(--text); border: 1px solid var(--line);
       border-radius: 20px; background: #0b1b2d; box-shadow: var(--shadow); padding: 0;
     }
-    dialog::backdrop { background: rgba(2,8,15,.76); backdrop-filter: blur(8px); }
+    dialog::backdrop { background: rgba(2,8,15,.24); backdrop-filter: blur(2px); }
     .dialog-body { padding: 22px; }
     .dialog-meta { margin: 8px 0 16px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
     .dialog-history { max-height: 260px; overflow: auto; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; }
@@ -126,8 +133,14 @@ const template = String.raw`<!doctype html>
     .json-number { color: #f4bd76; }
     .json-boolean { color: #cf9cff; }
     .json-null { color: #91a9bb; }
-    #editor-dialog { width: min(900px, calc(100% - 32px)); max-height: calc(100vh - 32px); overflow: auto; }
-    #editor-dialog .card { margin: 0; box-shadow: none; border: 0; }
+    #editor-dialog,#plugin-type-dialog,#push-history-dialog { position: fixed; top: 0; right: 0; bottom: 0; left: auto !important; width: min(720px, 100%); height: 100vh; max-height: none; margin: 0 0 0 auto; border-radius: 20px 0 0 20px; overflow: auto; transform: none; background: rgba(11,27,45,.82); }
+    #editor-dialog .card { min-height: 100%; margin: 0; box-shadow: none; border: 0; background: rgba(15,31,51,.78); }
+    .plugin-type-options { display: grid; gap: 10px; margin-top: 20px; }
+    .plugin-type-option { display: grid; gap: 3px; padding: 15px 16px; border: 1px solid var(--line); border-radius: 13px; color: var(--text); background: rgba(2,10,19,.35); text-align: left; }
+    .plugin-type-option:hover,.plugin-type-option:focus-visible { border-color: rgba(85,214,190,.6); outline: none; background: rgba(85,214,190,.08); }
+    .plugin-type-option.selected { border-color: var(--accent); background: rgba(85,214,190,.13); box-shadow: inset 3px 0 0 var(--accent); }
+    .plugin-type-option strong { font-size: 14px; }
+    .plugin-type-option span { color: var(--muted); font-size: 12px; }
     .empty { padding: 40px 20px; color: var(--muted); text-align: center; }
     .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 10px; }
     .custom-fields { display: grid; gap: 9px; }
@@ -139,6 +152,23 @@ const template = String.raw`<!doctype html>
     .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
     .push-switch { display: flex; gap: 8px; margin-bottom: 16px; }
     .push-switch .button.active { color: #06251f; border-color: transparent; background: var(--accent); }
+    .resource-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+    .resource-source { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 99px; font-size: 11px; white-space: nowrap; }
+    .resource-source.upload { color: var(--accent); background: rgba(85,214,190,.12); }
+    .resource-source.url { color: #a9d1ff; background: rgba(108,169,255,.12); }
+    .resource-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .resource-actions .button { padding: 6px 9px; font-size: 12px; }
+    .resource-url { max-width: 280px; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+    .resource-settings { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 16px; }
+    .resource-settings summary { cursor: pointer; color: var(--blue); font-weight: 700; }
+    .resource-settings form { padding: 16px 0 0; }
+    .resource-settings .form-actions { justify-content: flex-start; }
+    .resource-viewer { max-height: min(62vh, 620px); overflow: auto; margin: 14px 0 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; color: #dcecff; background: rgba(2,10,19,.72); font: 12px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace; white-space: pre; tab-size: 2; }
+    .resource-viewer .python-keyword { color: #78c7ff; }
+    .resource-viewer .python-string { color: #8ce3bf; }
+    .resource-viewer .python-comment { color: #718aa1; font-style: italic; }
+    .resource-viewer .python-number { color: #f4bd76; }
+    .resource-viewer .python-constant { color: #cf9cff; }
     .compact-table { min-width: 620px; }
     .portal-tabs { display: flex; gap: 6px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: rgba(2,10,19,.38); }
     .portal-tab { border: 0; border-radius: 8px; padding: 8px 13px; color: var(--muted); background: transparent; }
@@ -146,11 +176,141 @@ const template = String.raw`<!doctype html>
     .toast { position: fixed; z-index: 80; right: 24px; bottom: 24px; max-width: min(420px, calc(100% - 48px)); padding: 12px 16px; border: 1px solid rgba(85,214,190,.35); border-radius: 12px; color: var(--text); background: #12352f; box-shadow: 0 16px 38px rgba(0,0,0,.35); opacity: 0; transform: translateY(12px); pointer-events: none; transition: opacity .18s ease, transform .18s ease; }
     .toast.visible { opacity: 1; transform: translateY(0); }
     .toast.error { border-color: rgba(255,125,141,.38); background: #3a1d2a; }
+    .dashboard-shell { min-height: calc(100vh - 72px); min-height: calc(100dvh - 72px); overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: linear-gradient(135deg, #071522 0%, #07111f 55%, #081a26 100%); box-shadow: 0 24px 70px rgba(0,0,0,.22); }
+    .dashboard-topbar { min-height: 74px; margin-bottom: 0; padding: 0 26px; justify-content: flex-start; border-bottom: 1px solid var(--line); background: rgba(7,20,34,.86); }
+    #logout { margin-left: auto; }
+    .mobile-nav-toggle { display: none; width: 38px; height: 38px; padding: 0; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: rgba(255,255,255,.045); font-size: 20px; line-height: 1; }
+    .nav-scrim { display: none; }
+    .dashboard-brand { display: flex; align-items: center; gap: 11px; min-width: 208px; }
+    .brand-mark { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid rgba(85,214,190,.45); border-radius: 12px; color: var(--accent); background: rgba(85,214,190,.12); font-weight: 800; }
+    .dashboard-brand strong { display: block; font-size: 16px; letter-spacing: .02em; }
+    .dashboard-brand span { display: block; margin-top: 1px; color: var(--muted); font-size: 11px; }
+    .dashboard-account { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .account-avatar { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid rgba(85,214,190,.5); border-radius: 50%; color: #dffcf7; background: rgba(85,214,190,.26); font-weight: 800; }
+    .account-copy { min-width: 0; text-align: left; }
+    .account-name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .account-name-row > strong { max-width: 140px; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+    .account-copy > span { display: block; max-width: 170px; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .account-name-row .contribution-points { flex: 0 0 auto; }
+    .dashboard-layout { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: calc(100vh - 146px); min-height: calc(100dvh - 146px); }
+    .dashboard-sidebar { padding: 24px 12px; border-right: 1px solid var(--line); background: rgba(4,17,29,.72); }
+    .sidebar-group { display: grid; gap: 5px; }
+    .sidebar-label { padding: 8px 14px 7px; color: #718aa1; font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    .sidebar-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border: 1px solid transparent; border-radius: 10px; color: #a9bfd0; background: transparent; text-align: left; }
+    .sidebar-item:hover,.sidebar-item:focus-visible { color: var(--text); background: rgba(108,169,255,.08); outline: none; }
+    .sidebar-item.active { border-color: rgba(85,214,190,.12); color: var(--accent); background: rgba(85,214,190,.1); box-shadow: inset 3px 0 0 var(--accent); }
+    .sidebar-item .sidebar-icon { width: 20px; color: inherit; font-size: 14px; text-align: center; }
+    .dashboard-sidebar { display: flex; flex-direction: column; }
+    .dashboard-main { min-width: 0; padding: 18px clamp(20px, 4vw, 54px) 60px; }
+    .dashboard-content { width: min(1120px, 100%); margin: 0 auto; }
+    .portal-panel { margin-bottom: 22px; border-radius: 15px; background: rgba(11,28,45,.68); }
+    .portal-panel .card-head { padding: 16px 20px; }
+    .portal-panel .body { padding: 20px; }
+    .dashboard-content > [data-portal-page="resources"] .card-head { border-bottom: 0; }
+    .dashboard-content > [data-portal-page="resources"] .card-head { padding-top: 4px; padding-bottom: 12px; }
+    .dashboard-content > [data-portal-page="resources"] { background: transparent; border: 0; box-shadow: none; overflow: visible; }
+    .dashboard-content > [data-portal-page="resources"] .body { padding: 0; }
+    .resource-table-card { overflow: hidden; border: 1px solid var(--line); border-radius: 15px; background: rgba(11,28,45,.68); }
+    .resource-table-card .table-wrap { overflow-x: auto; }
+    .resource-table-card table { min-width: 720px; }
+    .resource-table-card th { padding-top: 15px; padding-bottom: 15px; background: rgba(18,42,64,.42); }
+    .resource-table-card td { padding-top: 15px; padding-bottom: 15px; }
+    .resource-table-card tr:last-child td { border-bottom: 0; }
+    .resource-identity { display: flex; align-items: center; gap: 10px; min-width: 208px; }
+    .resource-type-icon { display: grid; width: 34px; height: 34px; flex: 0 0 34px; place-items: center; border: 1px solid rgba(164,198,224,.18); border-radius: 9px; font-size: 13px; font-weight: 800; letter-spacing: -.04em; }
+    .resource-type-icon.py { color: #9fe7ff; background: linear-gradient(145deg, rgba(52,132,184,.9), rgba(39,74,138,.95)); }
+    .resource-type-icon.cms { color: #b8f2d7; background: linear-gradient(145deg, rgba(45,150,126,.9), rgba(33,99,104,.95)); }
+    .resource-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .resource-name strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .resource-push-history { margin-top: 18px; border: 1px solid var(--line); border-radius: 15px; background: rgba(11,28,45,.68); overflow: hidden; }
+    .resource-push-history .card-head { padding: 14px 18px; }
+    .resource-push-history .table-wrap { overflow-x: auto; }
+    .resource-add-button { padding: 11px 18px; font-size: 14px; }
+    .resource-source-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 10px; background: rgba(2,10,19,.42); }
+    .resource-source-tab { border: 0; border-radius: 7px; padding: 10px; color: var(--muted); background: transparent; }
+    .resource-source-tab.active { color: var(--text); background: rgba(85,214,190,.17); box-shadow: inset 0 0 0 1px rgba(85,214,190,.38); }
+    .file-drop { display: grid; min-height: 190px; place-items: center; align-content: center; gap: 7px; padding: 22px; border: 1px dashed rgba(164,198,224,.35); border-radius: 12px; color: var(--muted); background: rgba(2,10,19,.3); text-align: center; cursor: pointer; transition: border-color .18s ease, background .18s ease; }
+    .file-drop:hover,.file-drop.dragging { border-color: var(--accent); background: rgba(85,214,190,.08); }
+    .file-drop strong { color: var(--text); font-size: 15px; }
+    .file-drop-mark { color: var(--blue); font-size: 30px; line-height: 1; }
+    .file-drop small { color: var(--muted); }
+    .selected-file { min-height: 18px; margin-top: 8px; color: var(--accent); font-size: 12px; }
+    #user-resource-dialog { position: fixed; top: 0; right: 0; left: auto !important; bottom: 0; inset-inline-start: auto; width: min(460px, 100%); height: 100vh; max-height: none; margin: 0 0 0 auto; border-radius: 20px 0 0 20px; transform: none; background: rgba(11,27,45,.82); }
+    #user-resource-dialog .dialog-body { display: flex; height: 100%; flex-direction: column; padding: 24px; }
+    #user-resource-dialog .card-head { flex: 0 0 auto; padding: 0 0 20px; }
+    #user-resource-dialog form { display: flex; min-height: 0; flex: 1; flex-direction: column; padding: 20px 0 0; overflow-y: auto; }
+    #user-resource-dialog .row { grid-template-columns: 1fr; gap: 0; }
+    #user-resource-dialog .field { margin-bottom: 20px; }
+    #user-resource-dialog .form-actions { margin-top: auto; padding-top: 20px; }
+    #user-resource-dialog .push-switch { margin-bottom: 18px; }
+    @media (max-width: 900px) {
+      .dashboard-topbar { padding: 0 18px; }
+      .dashboard-brand { min-width: auto; }
+      .dashboard-brand span { display: none; }
+      .dashboard-account { min-width: auto; }
+      .dashboard-layout { grid-template-columns: 180px minmax(0,1fr); }
+    }
     @media (max-width: 760px) {
+      body.portal-mode { height: 100dvh; min-height: 100dvh; overflow: hidden; }
+      body.portal-mode .shell { width: 100%; margin: 0; padding: 0; }
+      .dashboard-topbar { position: sticky; top: 0; z-index: 50; height: 66px; min-height: 66px; flex: 0 0 66px; align-items: center; padding: 0 14px; }
+      .mobile-nav-toggle { display: grid; place-items: center; flex: 0 0 auto; }
+      .dashboard-brand { min-width: 0; }
+      .dashboard-brand strong { font-size: 14px; }
+      .dashboard-account { min-width: 0; flex: 1 1 auto; gap: 7px; }
+      .account-copy > span { display: block; max-width: 140px; font-size: 10px; line-height: 1.25; }
+      .account-name-row { gap: 5px; }
+      .account-name-row > strong { max-width: 118px; }
+      .contribution-points { padding: 3px 0; }
+      #logout { flex: 0 0 auto; }
+      .dashboard-layout { display: block; min-height: 0; flex: 1 1 auto; overflow: hidden; }
+      .dashboard-shell { display: flex; height: 100dvh; min-height: 0; flex-direction: column; border: 0; border-radius: 0; box-shadow: none; }
+      .dashboard-sidebar { position: fixed; top: 66px; bottom: 0; left: 0; z-index: 60; display: flex; width: min(284px, 84vw); padding: 22px 12px; border-right: 1px solid var(--line); border-bottom: 0; transform: translateX(-105%); transition: transform .2s ease; overflow-y: auto; box-shadow: 18px 0 42px rgba(0,0,0,.28); }
+      .dashboard-shell.nav-open .dashboard-sidebar { transform: translateX(0); }
+      .dashboard-shell.nav-open .nav-scrim { display: block; position: fixed; inset: 66px 0 0; z-index: 55; border: 0; background: rgba(2,8,15,.58); }
+      .sidebar-group { display: grid; gap: 5px; }
+      .sidebar-item { justify-content: flex-start; padding: 12px 14px; font-size: 14px; }
+      .sidebar-item .sidebar-icon { display: block; }
+      .dashboard-main { height: 100%; min-height: 0; overflow-y: auto; padding: 14px 12px 44px; }
+      .portal-panel { margin-bottom: 22px; }
       .auth-grid,.row { grid-template-columns: 1fr; gap: 0; }
       .custom-row { grid-template-columns: 1fr 90px auto; }
       .custom-value { grid-column: 1 / -1; grid-row: 2; }
       header { align-items: flex-start; }
+      #user-resource-dialog,#plugin-type-dialog,#editor-dialog,#push-history-dialog { top: auto; right: 0; bottom: 0; width: 100%; height: min(92vh, 760px); border-radius: 18px 18px 0 0; margin: 0; }
+      .resource-table-card .table-wrap { overflow: visible; }
+      .resource-table-card table { display: block; min-width: 0; }
+      .resource-table-card thead { display: none; }
+      .resource-table-card tbody { display: grid; }
+      .resource-table-card tr { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+      .resource-table-card tr:last-child { border-bottom: 0; }
+      .resource-table-card td { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 6px 0; border: 0; font-size: 12px; }
+      .resource-table-card td:first-child { grid-column: 1 / -1; padding: 4px 46px 10px 0; }
+      .resource-table-card td:nth-child(2)::before { content: "来源"; color: var(--muted); font-size: 11px; }
+      .resource-table-card td:nth-child(3)::before { content: "状态"; color: var(--muted); font-size: 11px; }
+      .resource-table-card td:nth-child(4)::before { content: "更新"; color: var(--muted); font-size: 11px; }
+      .resource-table-card td:nth-child(5) { position: absolute; top: 12px; right: 14px; padding: 0; }
+      .resource-table-card td:nth-child(4) { grid-column: 1 / -1; }
+      .resource-table-card .resource-source { max-width: calc(100% - 34px); overflow: hidden; text-overflow: ellipsis; }
+      .portal-panel[data-portal-page="plugins"] .card-head { display: block; padding: 18px 14px 14px; }
+      .portal-panel[data-portal-page="plugins"] .card-head > div:first-child { margin-bottom: 14px; }
+      .portal-panel[data-portal-page="plugins"] .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
+      .portal-panel[data-portal-page="plugins"] .actions .button { width: 100%; }
+      .portal-panel[data-portal-page="plugins"] .table-wrap { overflow: visible; }
+      .portal-panel[data-portal-page="plugins"] table { display: block; min-width: 0; }
+      .portal-panel[data-portal-page="plugins"] thead { display: none; }
+      .portal-panel[data-portal-page="plugins"] tbody { display: grid; }
+      .portal-panel[data-portal-page="plugins"] tr { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 12px; padding: 14px; border-bottom: 1px solid var(--line); }
+      .portal-panel[data-portal-page="plugins"] tr:last-child td { border-bottom: 0; }
+      .portal-panel[data-portal-page="plugins"] td { display: flex; align-items: center; min-width: 0; padding: 6px 0; border: 0; font-size: 12px; }
+      .portal-panel[data-portal-page="plugins"] td:first-child { grid-column: 1 / -1; padding: 2px 42px 12px 0; }
+      .portal-panel[data-portal-page="plugins"] td:nth-child(2)::before { content: "版本"; margin-right: 7px; color: var(--muted); font-size: 11px; }
+      .portal-panel[data-portal-page="plugins"] td:nth-child(3) { justify-content: flex-end; }
+      .portal-panel[data-portal-page="plugins"] td:nth-child(4) { grid-column: 1 / -1; color: var(--muted); }
+      .portal-panel[data-portal-page="plugins"] td:nth-child(4)::before { content: "提交"; margin-right: 7px; color: var(--muted); font-size: 11px; }
+      .portal-panel[data-portal-page="plugins"] td:nth-child(5) { grid-column: 1 / -1; display: block; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+      .portal-panel[data-portal-page="plugins"] td:nth-child(5)::before { content: "说明"; margin-right: 7px; color: var(--muted); font-size: 11px; }
+      .portal-panel[data-portal-page="plugins"] td:nth-child(6) { position: absolute; top: 14px; right: 14px; padding: 0; }
     }
     ${pushPreviewStyle}
   </style>
@@ -186,25 +346,42 @@ const template = String.raw`<!doctype html>
     </section>
 
     <main id="portal" hidden>
-      <section class="card">
-        <div class="user-bar">
-          <div class="user-identity"><div><strong id="user-nick"></strong><p class="subtitle" id="user-email"></p></div><div class="contribution-points" title="插件或 Push 首次通过 +1；私有插件和更新不计分"><strong id="contribution-points">0</strong><span>贡献值</span></div></div>
-          <div class="actions">
-            <div class="portal-tabs" role="tablist" aria-label="用户中心">
-              <button class="portal-tab" id="portal-plugins-tab" type="button" role="tab" aria-selected="true">我的插件</button>
-              <button class="portal-tab" id="portal-pushes-tab" type="button" role="tab" aria-selected="false">资源 Push</button>
-            </div>
-            <button class="button" id="logout" type="button">退出登录</button>
-          </div>
+      <div class="dashboard-shell">
+        <header class="dashboard-topbar">
+          <button class="mobile-nav-toggle" id="mobile-nav-toggle" type="button" aria-label="打开导航" aria-expanded="false">☰</button>
+          <div class="dashboard-account"><div class="account-avatar" id="user-avatar">U</div><div class="account-copy"><div class="account-name-row"><strong id="user-nick"></strong><span class="contribution-points" title="贡献值"><span class="contribution-icon" aria-hidden="true">✦</span><strong id="contribution-points">0</strong></span></div><span id="user-email"></span></div></div>
+          <button class="button" id="logout" type="button">退出</button>
+        </header>
+        <button class="nav-scrim" id="nav-scrim" type="button" aria-label="关闭导航"></button>
+        <div class="dashboard-layout">
+          <aside class="dashboard-sidebar">
+            <nav class="sidebar-group" role="tablist" aria-label="用户中心">
+              <button class="sidebar-item" id="portal-plugins-tab" data-portal-nav="plugins" type="button" role="tab" aria-selected="true"><span class="sidebar-icon">▦</span>我的插件</button>
+              <button class="sidebar-item" id="portal-resources-tab" data-portal-nav="resources" type="button" role="tab" aria-selected="false"><span class="sidebar-icon">◈</span>资源管理</button>
+              <button class="sidebar-item" id="portal-settings-tab" data-portal-nav="settings" type="button"><span class="sidebar-icon">⚙</span>配置管理</button>
+            </nav>
+          </aside>
+          <div class="dashboard-main">
+            <div class="dashboard-content">
+      <section class="card portal-panel" id="resource-card" data-portal-page="resources" hidden>
+        <div class="card-head"><div><h2>资源管理</h2></div><div class="actions"><button class="button" id="open-push-history" type="button">Push 记录</button><button class="button primary resource-add-button" id="new-user-resource" type="button">＋ 添加资源</button></div></div>
+        <div class="body">
+          <div class="resource-table-card"><div class="table-wrap"><table class="compact-table"><thead><tr><th>资源</th><th>来源</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead><tbody id="resource-rows"></tbody></table><div class="empty" id="resource-empty">暂无资源，先添加一个 Python 或 CMS 资源。</div></div></div>
         </div>
       </section>
-
-      <section class="card" id="push-card" data-portal-page="pushes" hidden>
-        <div class="card-head"><div><h2>Push 记录</h2><p class="subtitle">你提交的 Python 与 CMS 资源</p></div><button class="button primary" id="new-push" type="button" aria-label="新建 Push" title="新建 Push">＋</button></div>
-        <div class="table-wrap"><table class="compact-table"><thead><tr><th>资源</th><th>类型</th><th>状态</th><th>提交时间</th><th>说明</th><th>操作</th></tr></thead><tbody id="push-rows"></tbody></table><div class="empty" id="push-empty">暂无 Push 记录</div></div>
+      <section class="card portal-panel settings-panel" id="settings-card" data-portal-page="settings" hidden>
+        <div class="card-head"><div><h2>TVBox 配置与插件同步</h2><p class="subtitle">资源列表只负责管理资源，配置生成和插件同步在这里完成。</p></div></div>
+        <div class="body">
+          <form id="user-tvbox-settings-form">
+            <div class="row"><div class="field"><label for="user-tvbox-plugin-id">关联已上架插件 ID</label><input id="user-tvbox-plugin-id" placeholder="可选，只能关联自己的已上架插件"><span class="help">用户资源默认只生成配置；关联插件后可以手动同步插件版本。</span></div><div class="field"><label>配置地址</label><input id="user-tvbox-config-url" readonly placeholder="生成配置后显示"></div></div>
+            <div class="field"><label class="required" for="user-tvbox-template">TVBox 模板 JSON</label><textarea id="user-tvbox-template" style="min-height:180px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"></textarea><span class="help">服务端只替换 sites 字段，远程 Python 和 CMS 地址不会被服务器下载。</span></div>
+            <div class="form-actions"><button class="button" id="user-tvbox-save-settings" type="submit">保存设置</button><button class="button" id="user-tvbox-generate" type="button">仅生成配置</button><button class="button primary" id="user-tvbox-sync" type="button">生成并同步插件</button></div>
+            <p class="notice" id="user-tvbox-settings-notice"></p>
+          </form>
+        </div>
       </section>
-      <section class="card" data-portal-page="plugins">
-        <div class="card-head"><div><h2>我的插件</h2><p class="subtitle">管理公开投稿和仅供手动导入的私有插件</p></div><div class="actions"><button class="button" id="refresh" type="button">刷新</button><button class="button" id="import-plugins" type="button">批量导入 JSON</button><input id="import-json-file" type="file" accept=".json,application/json" hidden><button class="button" id="submit-all-drafts" type="button" disabled>全部提交审核</button><button class="button primary" id="new-plugin" type="button">新建插件</button></div></div>
+      <section class="card portal-panel" data-portal-page="plugins">
+        <div class="card-head"><div><h2>我的插件</h2><p class="subtitle">管理公开投稿和仅供手动导入的私有插件</p></div><div class="actions"><button class="button" id="import-plugins" type="button">批量导入 JSON</button><input id="import-json-file" type="file" accept=".json,application/json" hidden><button class="button primary" id="new-plugin" type="button">新建插件</button></div></div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>插件</th><th>提交版本</th><th>审核状态</th><th>提交时间</th><th>审核说明</th><th></th></tr></thead>
@@ -213,6 +390,15 @@ const template = String.raw`<!doctype html>
          <div class="empty" id="empty">暂无投稿记录</div>
         </div>
       </section>
+
+      <dialog id="plugin-type-dialog">
+        <div class="dialog-body">
+          <div class="card-head"><div><h2>选择插件类型</h2><p class="subtitle">先选择类型，再填写插件信息。</p></div><button class="button" id="close-plugin-type" type="button">关闭</button></div>
+          <div class="plugin-type-options" id="plugin-type-options"></div>
+          <div class="dialog-actions"><button class="button" id="cancel-plugin-type" type="button">取消</button><button class="button primary" id="confirm-plugin-type" type="button" disabled>继续</button></div>
+          <p class="notice" id="plugin-type-notice"></p>
+        </div>
+      </dialog>
 
       <dialog id="editor-dialog">
       <section class="card" id="editor-card">
@@ -249,28 +435,44 @@ const template = String.raw`<!doctype html>
         </form>
       </section>
       </dialog>
+            </div>
+          </div>
+        </div>
+      </div>
     </main>
   </div>
 
   <div class="action-menu" id="plugin-action-menu" role="menu" hidden></div>
+  <div class="action-menu" id="resource-action-menu" role="menu" hidden></div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <dialog id="push-dialog">
+  <dialog id="push-history-dialog">
     <div class="dialog-body">
-      <div class="card-head"><div><h2>新建资源 Push</h2><p class="subtitle">提交后由管理员处理</p></div><button class="button" id="close-push" type="button">关闭</button></div>
-      <form id="push-form">
-        <div class="push-switch"><button class="button active" id="push-type-py" type="button">Python</button><button class="button" id="push-type-cms" type="button">CMS</button></div>
-        <div id="push-py-fields">
-          <div class="field"><label>来源</label><select id="push-py-source"><option value="file">上传 .py 文件</option><option value="url">从 URL 获取</option></select></div>
-          <div class="field" id="push-file-field"><label class="required" for="push-file">Python 文件</label><input id="push-file" type="file" accept=".py,text/x-python"><span class="help">支持中文、空格和括号，只需文件名以 .py 结尾。</span></div>
-          <div class="field" id="push-url-field" hidden><label class="required" for="push-py-url">Python URL</label><input id="push-py-url" type="url" placeholder="https://example.com/script.py"><span class="help">提交时由服务器下载并保存内容，之后原地址变化不会影响本次审核。</span></div>
+      <div class="card-head"><div><h2>审核 Push 记录</h2><p class="subtitle">提交到公共资源池，等待管理员审核</p></div><button class="button" id="close-push-history" type="button">关闭</button></div>
+      <div class="resource-push-history" id="push-card">
+        <div class="table-wrap"><table class="compact-table"><thead><tr><th>资源</th><th>类型</th><th>状态</th><th>提交时间</th><th>说明</th><th>操作</th></tr></thead><tbody id="push-rows"></tbody></table><div class="empty" id="push-empty">暂无 Push 记录</div></div>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="user-resource-dialog">
+    <div class="dialog-body">
+      <div class="card-head"><div><h2 id="user-resource-dialog-title">添加资源</h2><p class="subtitle">Python 支持上传文件或保存远程地址；CMS 直接保存地址。</p></div><button class="button" id="close-user-resource" type="button">关闭</button></div>
+      <form id="user-resource-form">
+        <div class="push-switch"><button class="button active" id="user-resource-type-py" type="button">Python</button><button class="button" id="user-resource-type-cms" type="button">CMS</button></div>
+        <div id="user-resource-py-fields">
+          <div class="field"><label>来源方式</label><div class="resource-source-tabs" role="tablist" aria-label="Python 来源"><button class="resource-source-tab active" id="user-resource-source-file" type="button" role="tab" aria-selected="true">↥ 上传文件</button><button class="resource-source-tab" id="user-resource-source-url" type="button" role="tab" aria-selected="false">⌁ 输入地址</button></div><input id="user-resource-py-source" type="hidden" value="file"></div>
+          <div class="field" id="user-resource-file-field"><label class="required" for="user-resource-file">Python 文件</label><label class="file-drop" id="user-resource-file-drop" for="user-resource-file"><span class="file-drop-mark" id="user-resource-file-icon">↥</span><strong id="user-resource-file-title">点击选择 Python 文件</strong><span id="user-resource-file-hint">或将文件拖拽到此处</span><small id="user-resource-file-limit">仅支持 .py 文件，单个文件不超过 2 MB</small><input id="user-resource-file" type="file" accept=".py,text/x-python" hidden></label><div class="selected-file" id="user-resource-file-name">尚未选择文件</div></div>
+          <div class="field" id="user-resource-url-field" hidden><label class="required" for="user-resource-url">Python URL</label><input id="user-resource-url" type="url" placeholder="https://example.com/script.py"></div>
+          <div class="field" id="user-resource-url-name-field" hidden><label for="user-resource-url-name">显示名称</label><input id="user-resource-url-name" maxlength="255" placeholder="可选，默认从地址文件名获取"></div>
         </div>
-        <div id="push-cms-fields" hidden><div class="row"><div class="field"><label class="required" for="push-cms-name">CMS 名称</label><input id="push-cms-name" maxlength="100"></div><div class="field"><label class="required" for="push-cms-url">CMS URL</label><input id="push-cms-url" type="url" placeholder="https://example.com/api.php/provide/vod/"></div></div></div>
-        <div class="field"><label for="push-note">备注</label><textarea id="push-note" maxlength="500" placeholder="可选：补充来源、更新内容或注意事项"></textarea></div>
-        <div class="checks"><label><input id="push-adult" type="checkbox"> 包含 🔞 内容</label></div>
-        <div class="form-actions"><button class="button" id="cancel-push" type="button">取消</button><button class="button primary" id="push-submit" type="submit">提交 Push</button></div>
-        <p class="notice" id="push-dialog-notice"></p>
+        <div id="user-resource-cms-fields" hidden><div class="row"><div class="field"><label class="required" for="user-resource-cms-name">CMS 名称</label><input id="user-resource-cms-name" maxlength="100"></div><div class="field"><label class="required" for="user-resource-cms-url">CMS URL</label><input id="user-resource-cms-url" type="url" placeholder="https://example.com/api.php/provide/vod/"></div></div></div>
+        <div class="checks"><label><input id="user-resource-adult" type="checkbox"> 包含 🔞 内容</label></div>
+        <div class="form-actions"><button class="button" id="cancel-user-resource" type="button">取消</button><button class="button primary" id="user-resource-submit" type="submit">添加资源</button></div>
+        <p class="notice" id="user-resource-notice"></p>
       </form>
     </div>
+  </dialog>
+  <dialog id="user-resource-view-dialog">
+    <div class="dialog-body"><div class="card-head"><div><h2 id="user-resource-view-title">查看资源</h2><p class="subtitle" id="user-resource-view-meta"></p></div><button class="button" id="close-user-resource-view" type="button">关闭</button></div><pre class="resource-viewer" id="user-resource-view-content"></pre><div class="dialog-actions"><button class="button" id="user-resource-copy" type="button">复制内容</button><button class="button primary" id="user-resource-view-close" type="button">完成</button></div><p class="notice" id="user-resource-view-notice"></p></div>
   </dialog>
   <dialog id="config-dialog">
     <div class="dialog-body">
@@ -304,11 +506,28 @@ const template = String.raw`<!doctype html>
   ${pushPreviewDialog}
   <script nonce="__NONCE__">
     ${pushPreviewScript}
+    const portalPageStorageKey = "hawk-plugin-store.portal-page";
+    const portalPages = new Set(["plugins", "resources", "settings"]);
     const state = {
-      user: null, submissions: [], pushes: [], pushType: "py", portalPage: "plugins", pluginTypes: [], editing: false, actionTrigger: null
+      user: null, submissions: [], pushes: [], resources: [], tvboxSettings: null,
+      userResourceType: "py", userResourceEditing: null,
+      portalPage: readStoredPortalPage(), pluginTypes: [], editing: false, selectedPluginType: null, actionTrigger: null, resourceActionTrigger: null
     };
     const $ = (id) => document.getElementById(id);
     const known = new Set(["id","type","icon","name","author","version","update_time","desc","endpoint"]);
+
+    function readStoredPortalPage() {
+      try {
+        const page = localStorage.getItem(portalPageStorageKey);
+        return portalPages.has(page) ? page : "plugins";
+      } catch {
+        return "plugins";
+      }
+    }
+
+    function storePortalPage(page) {
+      try { localStorage.setItem(portalPageStorageKey, page); } catch { /* Storage may be unavailable. */ }
+    }
 
     $("login-form").addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -339,22 +558,48 @@ const template = String.raw`<!doctype html>
         credentials: "same-origin"
       });
       state.user = null; state.submissions = [];
+      setMobileNavigation(false);
+      document.body.classList.remove("portal-mode");
       $("portal").hidden = true; $("auth-card").hidden = false;
     });
-    $("refresh").addEventListener("click", loadPortalData);
-    $("portal-plugins-tab").addEventListener("click", () => switchPortalPage("plugins"));
-    $("portal-pushes-tab").addEventListener("click", () => switchPortalPage("pushes"));
-    $("push-type-py").addEventListener("click", () => setPushType("py"));
-    $("push-type-cms").addEventListener("click", () => setPushType("cms"));
-    $("push-py-source").addEventListener("change", updatePushSource);
-    $("push-form").addEventListener("submit", submitPush);
-    $("new-push").addEventListener("click", openPushDialog);
-    $("close-push").addEventListener("click", closePushDialog);
-    $("cancel-push").addEventListener("click", closePushDialog);
+    $("mobile-nav-toggle").addEventListener("click", () => setMobileNavigation(!document.querySelector(".dashboard-shell").classList.contains("nav-open")));
+    $("nav-scrim").addEventListener("click", () => setMobileNavigation(false));
+    $("portal-plugins-tab").addEventListener("click", () => { switchPortalPage("plugins"); setMobileNavigation(false); });
+    $("portal-resources-tab").addEventListener("click", () => { switchPortalPage("resources"); setMobileNavigation(false); });
+    $("portal-settings-tab").addEventListener("click", () => { switchPortalPage("settings"); setMobileNavigation(false); });
+    $("close-push-history").addEventListener("click", closePushHistory);
+    $("open-push-history").addEventListener("click", openPushHistory);
+    $("new-user-resource").addEventListener("click", () => openUserResourceDialog());
+    $("close-user-resource").addEventListener("click", closeUserResourceDialog);
+    $("cancel-user-resource").addEventListener("click", closeUserResourceDialog);
+    $("user-resource-type-py").addEventListener("click", () => setUserResourceType("py"));
+    $("user-resource-type-cms").addEventListener("click", () => setUserResourceType("cms"));
+    $("user-resource-source-file").addEventListener("click", () => setUserResourceSource("file"));
+    $("user-resource-source-url").addEventListener("click", () => setUserResourceSource("url"));
+    $("user-resource-file").addEventListener("change", updateSelectedUserResourceFile);
+    $("user-resource-file-drop").addEventListener("dragover", (event) => { event.preventDefault(); $("user-resource-file-drop").classList.add("dragging"); });
+    $("user-resource-file-drop").addEventListener("dragleave", () => $("user-resource-file-drop").classList.remove("dragging"));
+    $("user-resource-file-drop").addEventListener("drop", (event) => {
+      event.preventDefault();
+      $("user-resource-file-drop").classList.remove("dragging");
+      const files = event.dataTransfer?.files;
+      if (!files?.length) return;
+      const transfer = new DataTransfer(); transfer.items.add(files[0]); $("user-resource-file").files = transfer.files;
+      updateSelectedUserResourceFile();
+    });
+    $("user-resource-form").addEventListener("submit", submitUserResource);
+    $("close-user-resource-view").addEventListener("click", closeUserResourceViewer);
+    $("user-resource-view-close").addEventListener("click", closeUserResourceViewer);
+    $("user-resource-copy").addEventListener("click", copyUserResourceContent);
+    $("user-tvbox-settings-form").addEventListener("submit", saveUserTVBoxSettingsForm);
+    $("user-tvbox-generate").addEventListener("click", () => generateUserTVBox(false));
+    $("user-tvbox-sync").addEventListener("click", () => generateUserTVBox(true));
     $("new-plugin").addEventListener("click", newPlugin);
+    $("close-plugin-type").addEventListener("click", closePluginTypeDialog);
+    $("cancel-plugin-type").addEventListener("click", closePluginTypeDialog);
+    $("confirm-plugin-type").addEventListener("click", confirmPluginType);
     $("import-plugins").addEventListener("click", () => $("import-json-file").click());
     $("import-json-file").addEventListener("change", importPlugins);
-    $("submit-all-drafts").addEventListener("click", submitAllDrafts);
     $("close-editor").addEventListener("click", closeEditor);
     $("cancel-editor").addEventListener("click", closeEditor);
     $("add-field").addEventListener("click", () => addCustomField("", ""));
@@ -370,13 +615,17 @@ const template = String.raw`<!doctype html>
     $("config-close").addEventListener("click", closePluginConfig);
     $("config-copy").addEventListener("click", copyPluginConfig);
     document.addEventListener("click", (event) => {
-      const menu = $("plugin-action-menu");
-      if (!menu.hidden && !menu.contains(event.target) && event.target !== state.actionTrigger) {
+      const pluginMenu = $("plugin-action-menu");
+      const resourceMenu = $("resource-action-menu");
+      if (!pluginMenu.hidden && !pluginMenu.contains(event.target) && event.target !== state.actionTrigger) {
         closePluginMenu();
       }
+      if (!resourceMenu.hidden && !resourceMenu.contains(event.target) && event.target !== state.resourceActionTrigger) {
+        closeResourceMenu();
+      }
     });
-    window.addEventListener("resize", closePluginMenu);
-    window.addEventListener("scroll", closePluginMenu, true);
+    window.addEventListener("resize", () => { closePluginMenu(); closeResourceMenu(); });
+    window.addEventListener("scroll", () => { closePluginMenu(); closeResourceMenu(); }, true);
     restoreSession();
 
     async function authenticate(path, body, noticeID) {
@@ -427,6 +676,8 @@ const template = String.raw`<!doctype html>
 
     function showPortal(user) {
       state.user = user;
+      setMobileNavigation(false);
+      document.body.classList.add("portal-mode");
       $("auth-card").hidden = true; $("portal").hidden = false;
       updateUserSummary(user);
       switchPortalPage(state.portalPage);
@@ -435,20 +686,32 @@ const template = String.raw`<!doctype html>
     function updateUserSummary(user) {
       $("user-nick").textContent = user.nick;
       $("user-email").textContent = user.email;
+      $("user-avatar").textContent = (user.nick || user.email || "U").trim().slice(0, 1).toUpperCase();
       $("contribution-points").textContent = new Intl.NumberFormat().format(user.contribution_points ?? 0);
     }
 
     function switchPortalPage(page) {
-      state.portalPage = page;
+      const nextPage = portalPages.has(page) ? page : "plugins";
+      state.portalPage = nextPage;
+      storePortalPage(nextPage);
       document.querySelectorAll("[data-portal-page]").forEach((section) => {
-        section.hidden = section.dataset.portalPage !== page;
+        section.hidden = section.dataset.portalPage !== nextPage;
       });
-      $("portal-plugins-tab").setAttribute("aria-selected", page === "plugins" ? "true" : "false");
-      $("portal-pushes-tab").setAttribute("aria-selected", page === "pushes" ? "true" : "false");
+      document.querySelectorAll("[data-portal-nav]").forEach((item) => item.classList.toggle("active", item.dataset.portalNav === nextPage));
+      $("portal-plugins-tab").setAttribute("aria-selected", nextPage === "plugins" ? "true" : "false");
+      $("portal-resources-tab").setAttribute("aria-selected", nextPage === "resources" ? "true" : "false");
+    }
+
+    function setMobileNavigation(open) {
+      const shell = document.querySelector(".dashboard-shell");
+      if (!shell) return;
+      shell.classList.toggle("nav-open", open);
+      $("mobile-nav-toggle").setAttribute("aria-expanded", open ? "true" : "false");
+      $("mobile-nav-toggle").setAttribute("aria-label", open ? "关闭导航" : "打开导航");
     }
 
     async function loadPortalData() {
-      await Promise.all([loadSubmissions(), loadPushes(), loadPluginTypes(), loadCurrentUser()]);
+      await Promise.all([loadSubmissions(), loadPushes(), loadUserResources(), loadUserTVBoxSettings(), loadPluginTypes(), loadCurrentUser()]);
     }
 
     async function loadCurrentUser() {
@@ -459,69 +722,6 @@ const template = String.raw`<!doctype html>
       updateUserSummary(result.user);
     }
 
-    function setPushType(type) {
-      state.pushType = type;
-      $("push-py-fields").hidden = type !== "py";
-      $("push-cms-fields").hidden = type !== "cms";
-      $("push-type-py").classList.toggle("active", type === "py");
-      $("push-type-cms").classList.toggle("active", type === "cms");
-    }
-
-    function updatePushSource() {
-      const file = $("push-py-source").value === "file";
-      $("push-file-field").hidden = !file;
-      $("push-url-field").hidden = file;
-    }
-
-    function openPushDialog() {
-      showNotice("push-dialog-notice", "", "");
-      $("push-dialog").showModal();
-    }
-
-    function closePushDialog() {
-      if ($("push-dialog").open) $("push-dialog").close();
-    }
-
-    async function submitPush(event) {
-      event.preventDefault();
-      const button = $("push-submit");
-      button.disabled = true;
-      showNotice("push-dialog-notice", "正在提交…", "");
-      try {
-        let response;
-        if (state.pushType === "py") {
-          const form = new FormData();
-          if ($("push-py-source").value === "file") {
-            const file = $("push-file").files[0];
-            if (!file) throw new Error("请选择一个 .py 文件。");
-            form.append("file", file);
-          } else {
-            const url = $("push-py-url").value.trim();
-            if (!url) throw new Error("请填写 Python URL。");
-            form.append("url", url);
-          }
-          form.append("note", $("push-note").value.trim());
-          form.append("is_adult", $("push-adult").checked ? "true" : "false");
-          response = await fetch("/api/v1/user/pushes/py", { method: "POST", credentials: "same-origin", body: form });
-        } else {
-          const name = $("push-cms-name").value.trim();
-          const url = $("push-cms-url").value.trim();
-          if (!name || !url) throw new Error("请填写 CMS 名称和 URL。");
-          response = await fetch("/api/v1/user/pushes/cms", {
-            method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ name, url, note: $("push-note").value.trim() || null, is_adult: $("push-adult").checked })
-          });
-        }
-        if (!response.ok) throw await responseError(response);
-        $("push-form").reset(); setPushType(state.pushType); updatePushSource();
-        await loadPushes();
-        await loadCurrentUser();
-        closePushDialog();
-        showNotice("push-notice", "Push 已提交，处理结果会显示在记录中并通过邮件通知。", "ok");
-      } catch (error) {
-        showNotice("push-dialog-notice", error.message, "error");
-      } finally { button.disabled = false; }
-    }
 
     async function loadPushes() {
       const response = await fetch("/api/v1/user/pushes?page=1&page_size=100", { credentials: "same-origin" });
@@ -529,7 +729,329 @@ const template = String.raw`<!doctype html>
       state.pushes = (await response.json()).items;
       renderPushRows($("push-rows"), state.pushes);
       $("push-empty").hidden = state.pushes.length > 0;
+      $("open-push-history").textContent = state.pushes.length ? "Push 记录 (" + state.pushes.length + ")" : "Push 记录";
     }
+
+    async function openPushHistory() {
+      $("push-history-dialog").showModal();
+      try {
+        await loadPushes();
+      } catch (error) {
+        showNotice("push-notice", error.message, "error");
+      }
+    }
+
+    function closePushHistory() {
+      if ($("push-history-dialog").open) $("push-history-dialog").close();
+    }
+
+    async function loadUserResources() {
+      const response = await fetch("/api/v1/user/tvbox/resources", { credentials: "same-origin" });
+      if (!response.ok) throw await responseError(response);
+      const result = await response.json();
+      state.resources = result.items || [];
+      renderUserResources(result);
+    }
+
+    async function loadUserTVBoxSettings() {
+      const response = await fetch("/api/v1/user/tvbox/settings", { credentials: "same-origin" });
+      if (!response.ok) throw await responseError(response);
+      state.tvboxSettings = await response.json();
+      $("user-tvbox-plugin-id").value = state.tvboxSettings.linked_plugin_id || "";
+      $("user-tvbox-template").value = JSON.stringify(state.tvboxSettings.template || { sites: [] }, null, 2);
+      const existingConfigURL = $("user-tvbox-config-url").value;
+      $("user-tvbox-config-url").value = state.tvboxSettings.config_sha256
+        ? location.origin + "/tvbox/user/" + encodeURIComponent(state.tvboxSettings.public_key) + "/config.json?v=" + encodeURIComponent(state.tvboxSettings.config_sha256)
+        : existingConfigURL && existingConfigURL !== "尚未生成配置" ? existingConfigURL : "尚未生成配置";
+      const sync = state.tvboxSettings.plugin_sync_status;
+      showNotice("user-tvbox-settings-notice", sync ? "插件同步状态：" + sync + (state.tvboxSettings.plugin_sync_error ? "，" + state.tvboxSettings.plugin_sync_error : "") : "", sync === "failed" ? "error" : "");
+    }
+
+    function renderUserResources(result) {
+      const tbody = $("resource-rows");
+      tbody.replaceChildren();
+      const visibleResources = state.resources;
+      $("resource-empty").hidden = visibleResources.length > 0;
+      $("resource-empty").textContent = "暂无资源，先添加一个 Python 或 CMS 资源。";
+      visibleResources.forEach((item) => {
+        const index = state.resources.findIndex((value) => value.id === item.id);
+        const row = document.createElement("tr");
+        const typeIcon = document.createElement("span");
+        typeIcon.className = "resource-type-icon " + (item.resource_type === "py" ? "py" : "cms");
+        typeIcon.textContent = item.resource_type === "py" ? "Py" : "C";
+        typeIcon.title = item.resource_type === "py" ? "Python" : "CMS";
+        typeIcon.setAttribute("aria-label", item.resource_type === "py" ? "Python" : "CMS");
+        const name = document.createElement("strong"); name.textContent = item.name + (item.is_adult ? " 🔞" : "");
+        const nameSlot = document.createElement("div"); nameSlot.className = "resource-identity";
+        const nameText = document.createElement("div"); nameText.className = "resource-name"; nameText.append(name);
+        nameSlot.append(typeIcon, nameText);
+        row.append(cell(nameSlot));
+        const source = document.createElement("span"); source.className = "resource-source " + item.source_type; source.textContent = item.source_type === "upload" ? "本地文件" : "远程地址";
+        row.append(cell(source));
+        const status = document.createElement("span"); status.className = "badge " + (item.enabled ? "accepted" : "cancelled"); status.textContent = item.enabled ? "已启用" : "已禁用";
+        row.append(cell(status));
+        row.append(cell(new Date(item.updated_at).toLocaleString()));
+        const action = document.createElement("td");
+        const more = document.createElement("button");
+        more.className = "button menu-trigger";
+        more.type = "button";
+        more.textContent = "•••";
+        more.title = "更多操作";
+        more.setAttribute("aria-label", item.name + " 更多操作");
+        more.setAttribute("aria-haspopup", "menu");
+        more.setAttribute("aria-expanded", "false");
+        more.addEventListener("click", (event) => {
+          event.stopPropagation();
+          openResourceMenu(item, more, index);
+        });
+        action.append(more);
+        row.append(action); tbody.append(row);
+      });
+    }
+
+    function openResourceMenu(item, trigger, index) {
+      const menu = $("resource-action-menu");
+      if (!menu.hidden && state.resourceActionTrigger === trigger) {
+        closeResourceMenu();
+        return;
+      }
+      closePluginMenu();
+      closeResourceMenu();
+      state.resourceActionTrigger = trigger;
+      trigger.setAttribute("aria-expanded", "true");
+      menu.replaceChildren();
+      const addAction = (label, action, danger = false) => {
+        const button = document.createElement("button");
+        button.className = "menu-item" + (danger ? " danger" : "");
+        button.type = "button";
+        button.role = "menuitem";
+        button.textContent = label;
+        button.addEventListener("click", () => {
+          closeResourceMenu();
+          action();
+        });
+        menu.append(button);
+        return button;
+      };
+      if (item.source_type === "upload") {
+        addAction("查看内容", () => openUserResourceViewer(item));
+        addAction("替换文件", () => replaceUserResource(item));
+      } else {
+        addAction("编辑配置", () => openUserResourceDialog(item));
+      }
+      const pushAction = addAction(
+        item.pushed ? "已 Push" : "Push",
+        () => pushUserResource(item),
+      );
+      pushAction.disabled = item.pushed;
+      pushAction.title = item.pushed ? "这个资源已经 Push 过" : "提交此资源等待审核";
+      addAction(item.enabled ? "停用资源" : "启用资源", () => toggleUserResource(item));
+      if (index > 0) addAction("上移", () => moveUserResource(item, -1));
+      if (index < state.resources.length - 1) addAction("下移", () => moveUserResource(item, 1));
+      addAction("删除资源", () => deleteUserResource(item), true);
+      menu.hidden = false;
+      const triggerRect = trigger.getBoundingClientRect();
+      const menuRect = menu.getBoundingClientRect();
+      menu.style.left = Math.max(8, Math.min(triggerRect.right - menuRect.width, window.innerWidth - menuRect.width - 8)) + "px";
+      menu.style.top = Math.max(8, Math.min(triggerRect.bottom + 6, window.innerHeight - menuRect.height - 8)) + "px";
+    }
+
+    async function pushUserResource(item) {
+      if (item.pushed) return;
+      try {
+        const response = await fetch("/api/v1/user/tvbox/resources/" + encodeURIComponent(item.id) + "/push", { method: "POST", credentials: "same-origin" });
+        if (!response.ok) throw await responseError(response);
+        await Promise.all([loadUserResources(), loadPushes()]);
+        showNotice("push-notice", "资源已提交审核。", "ok");
+      } catch (error) {
+        showNotice("push-notice", error.message, "error");
+      }
+    }
+
+    function setUserResourceType(type) {
+      state.userResourceType = type;
+      $("user-resource-py-fields").hidden = type !== "py";
+      $("user-resource-cms-fields").hidden = type !== "cms";
+      $("user-resource-type-py").classList.toggle("active", type === "py");
+      $("user-resource-type-cms").classList.toggle("active", type === "cms");
+    }
+
+    function setUserResourceSource(source) {
+      $("user-resource-py-source").value = source;
+      updateUserResourceSource();
+    }
+
+    function updateUserResourceSource() {
+      const upload = $("user-resource-py-source").value === "file";
+      $("user-resource-file-field").hidden = !upload;
+      $("user-resource-url-field").hidden = upload;
+      $("user-resource-url-name-field").hidden = upload;
+      $("user-resource-source-file").classList.toggle("active", upload);
+      $("user-resource-source-url").classList.toggle("active", !upload);
+      $("user-resource-source-file").setAttribute("aria-selected", upload ? "true" : "false");
+      $("user-resource-source-url").setAttribute("aria-selected", upload ? "false" : "true");
+    }
+
+    function updateSelectedUserResourceFile() {
+      const file = $("user-resource-file").files[0];
+      $("user-resource-file-icon").textContent = file ? "✓" : "↥";
+      $("user-resource-file-title").textContent = file ? file.name : "点击选择 Python 文件";
+      $("user-resource-file-hint").textContent = file ? "已选择文件，点击可重新选择" : "或将文件拖拽到此处";
+      $("user-resource-file-limit").textContent = file ? "文件大小 " + formatBytes(file.size) + " · 单个文件不超过 2 MB" : "仅支持 .py 文件，单个文件不超过 2 MB";
+      $("user-resource-file-name").textContent = file ? file.name + " · " + formatBytes(file.size) : "尚未选择文件";
+    }
+
+    function openUserResourceDialog(item = null) {
+      state.userResourceEditing = item;
+      $("user-resource-dialog-title").textContent = item ? "编辑配置" : "添加资源";
+      $("user-resource-submit").textContent = item ? (item.source_type === "upload" ? "替换文件" : "保存配置") : "添加资源";
+      $("user-resource-form").reset();
+      $("user-resource-adult").checked = item?.is_adult === true;
+      setUserResourceType(item?.resource_type || "py");
+      setUserResourceSource(item ? (item.source_type === "upload" ? "file" : "url") : "file");
+      updateSelectedUserResourceFile();
+      if (item) {
+        $("user-resource-url").value = item.source_url || "";
+        $("user-resource-url-name").value = item.name || "";
+        $("user-resource-cms-name").value = item.name || "";
+        $("user-resource-cms-url").value = item.source_url || "";
+      }
+      showNotice("user-resource-notice", "", "");
+      $("user-resource-dialog").showModal();
+    }
+
+    function closeUserResourceDialog() { if ($("user-resource-dialog").open) $("user-resource-dialog").close(); }
+
+    async function submitUserResource(event) {
+      event.preventDefault();
+      const button = $("user-resource-submit"); button.disabled = true; showNotice("user-resource-notice", "正在保存…", "");
+      try {
+        let response;
+        if (state.userResourceEditing) {
+          const resourcePath = "/api/v1/user/tvbox/resources/" + encodeURIComponent(state.userResourceEditing.id);
+          if (state.userResourceEditing.source_type === "upload") {
+            const file = $("user-resource-file").files[0];
+            if (!file) throw new Error("请选择要替换的 Python 文件。");
+            const form = new FormData();
+            form.append("file", file);
+            form.append("is_adult", $("user-resource-adult").checked ? "true" : "false");
+            response = await fetch(resourcePath, { method: "PUT", credentials: "same-origin", body: form });
+          } else {
+            response = await fetch(resourcePath, {
+              method: "PUT", credentials: "same-origin", headers: { "content-type": "application/json" },
+              body: JSON.stringify({ url: state.userResourceType === "cms" ? $("user-resource-cms-url").value.trim() : $("user-resource-url").value.trim(), name: state.userResourceType === "cms" ? $("user-resource-cms-name").value.trim() : $("user-resource-url-name").value.trim(), is_adult: $("user-resource-adult").checked })
+            });
+          }
+        } else if (state.userResourceType === "py") {
+          const form = new FormData();
+          if ($("user-resource-py-source").value === "file") {
+            const file = $("user-resource-file").files[0]; if (!file) throw new Error("请选择一个 .py 文件。"); form.append("file", file);
+          } else {
+            const url = $("user-resource-url").value.trim(); if (!url) throw new Error("请填写 Python URL。"); form.append("url", url); form.append("name", $("user-resource-url-name").value.trim());
+          }
+          form.append("is_adult", $("user-resource-adult").checked ? "true" : "false");
+          response = await fetch("/api/v1/user/tvbox/resources/py", { method: "POST", credentials: "same-origin", body: form });
+        } else {
+          response = await fetch("/api/v1/user/tvbox/resources/cms", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: $("user-resource-cms-name").value.trim(), url: $("user-resource-cms-url").value.trim(), is_adult: $("user-resource-adult").checked }) });
+        }
+        if (!response.ok) throw await responseError(response);
+        closeUserResourceDialog(); await loadUserResources(); showNotice("push-notice", state.userResourceEditing ? "资源已更新。" : "资源已加入列表。", "ok");
+      } catch (error) { showNotice("user-resource-notice", error.message, "error"); }
+      finally { button.disabled = false; }
+    }
+
+    async function toggleUserResource(item) {
+      const response = await fetch("/api/v1/user/tvbox/resources/" + encodeURIComponent(item.id) + "/enabled", { method: "PUT", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: !item.enabled }) });
+      if (!response.ok) return showNotice("push-notice", (await responseError(response)).message, "error");
+      await loadUserResources();
+    }
+
+    async function moveUserResource(item, delta) {
+      const index = state.resources.findIndex((value) => value.id === item.id); const other = state.resources[index + delta]; if (!other) return;
+      await Promise.all([
+        fetch("/api/v1/user/tvbox/resources/" + encodeURIComponent(item.id) + "/order", { method: "PUT", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ sort_order: other.sort_order }) }),
+        fetch("/api/v1/user/tvbox/resources/" + encodeURIComponent(other.id) + "/order", { method: "PUT", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ sort_order: item.sort_order }) })
+      ]);
+      await loadUserResources();
+    }
+
+    async function deleteUserResource(item) {
+      if (!confirm("确定删除资源 " + item.name + "？")) return;
+      const response = await fetch("/api/v1/user/tvbox/resources/" + encodeURIComponent(item.id), { method: "DELETE", credentials: "same-origin" });
+      if (!response.ok) return showNotice("push-notice", (await responseError(response)).message, "error");
+      await loadUserResources(); showNotice("push-notice", "资源已删除。", "ok");
+    }
+
+    function replaceUserResource(item) {
+      const input = document.createElement("input"); input.type = "file"; input.accept = ".py,text/x-python";
+      input.addEventListener("change", async () => { const file = input.files[0]; if (!file) return; const form = new FormData(); form.append("file", file); const response = await fetch("/api/v1/user/tvbox/resources/" + encodeURIComponent(item.id), { method: "PUT", credentials: "same-origin", body: form }); if (!response.ok) return showNotice("push-notice", (await responseError(response)).message, "error"); await loadUserResources(); showNotice("push-notice", "Python 文件已替换。", "ok"); });
+      input.click();
+    }
+
+    async function openUserResourceViewer(item) {
+      $("user-resource-view-title").textContent = item.name;
+      $("user-resource-view-meta").textContent = item.source_type === "upload" ? "本地文件 · 只读查看" : "远程地址 · 只读查看";
+      $("user-resource-view-content").textContent = "加载中…"; showNotice("user-resource-view-notice", "", ""); $("user-resource-view-dialog").showModal();
+      const response = await fetch("/api/v1/user/tvbox/resources/" + encodeURIComponent(item.id) + "/content", { credentials: "same-origin" });
+      if (!response.ok) return showNotice("user-resource-view-notice", (await responseError(response)).message, "error");
+      const result = await response.json();
+      const content = $("user-resource-view-content");
+      content.classList.toggle("python-source", result.resource_type === "py");
+      if (result.resource_type === "py" && result.content) {
+        content.innerHTML = highlightPython(result.content);
+      } else {
+        content.textContent = result.content ?? result.source_url ?? "—";
+      }
+    }
+
+    function closeUserResourceViewer() { if ($("user-resource-view-dialog").open) $("user-resource-view-dialog").close(); }
+    async function copyUserResourceContent() { try { await navigator.clipboard.writeText($("user-resource-view-content").textContent); showNotice("user-resource-view-notice", "内容已复制。", "ok"); } catch { showNotice("user-resource-view-notice", "复制失败，请手动选择内容。", "error"); } }
+
+    function highlightPython(source) {
+      const keywords = new Set(["and","as","assert","async","await","break","case","class","continue","def","del","elif","else","except","finally","for","from","global","if","import","in","is","lambda","match","nonlocal","not","or","pass","raise","return","try","while","with","yield"]);
+      const constants = new Set(["True","False","None","NotImplemented","Ellipsis"]);
+      const tokenPattern = /("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|#[^\r\n]*|\b[A-Za-z_]\w*\b|\b\d+(?:\.\d+)?\b)/g;
+      let result = ""; let lastIndex = 0; let match;
+      while ((match = tokenPattern.exec(source)) !== null) {
+        result += escapeHTML(source.slice(lastIndex, match.index));
+        const token = match[0];
+        const className = token.startsWith("#")
+          ? "python-comment"
+          : token.startsWith("\"") || token.startsWith("'")
+            ? "python-string"
+            : constants.has(token)
+              ? "python-constant"
+              : keywords.has(token)
+                ? "python-keyword"
+                : /^\d/.test(token)
+                  ? "python-number"
+                  : "";
+        result += className ? "<span class=\"" + className + "\">" + escapeHTML(token) + "</span>" : escapeHTML(token);
+        lastIndex = tokenPattern.lastIndex;
+      }
+      return result + escapeHTML(source.slice(lastIndex));
+    }
+
+    async function saveUserTVBoxSettingsForm(event) {
+      event.preventDefault();
+      try {
+        const template = JSON.parse($("user-tvbox-template").value);
+        const response = await fetch("/api/v1/user/tvbox/settings", { method: "PUT", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ template, linked_plugin_id: $("user-tvbox-plugin-id").value.trim() || null }) });
+        if (!response.ok) throw await responseError(response); await loadUserTVBoxSettings(); showNotice("user-tvbox-settings-notice", "设置已保存。", "ok");
+      } catch (error) { showNotice("user-tvbox-settings-notice", error instanceof SyntaxError ? "模板不是有效 JSON。" : error.message, "error"); }
+    }
+
+    async function generateUserTVBox(sync) {
+      const button = sync ? $("user-tvbox-sync") : $("user-tvbox-generate"); button.disabled = true; showNotice("user-tvbox-settings-notice", sync ? "正在生成并同步…" : "正在生成配置…", "");
+      try {
+        const response = await fetch("/api/v1/user/tvbox/" + (sync ? "sync" : "generate"), { method: "POST", credentials: "same-origin" });
+        if (!response.ok) throw await responseError(response); const result = await response.json(); await loadUserTVBoxSettings(); $("user-tvbox-config-url").value = result.config_url; showNotice("user-tvbox-settings-notice", result.plugin_sync_error ? result.plugin_sync_error : (sync ? "配置已生成，插件同步完成。" : "配置已生成。"), result.plugin_sync_error ? "error" : "ok");
+      } catch (error) { showNotice("user-tvbox-settings-notice", error.message, "error"); }
+      finally { button.disabled = false; }
+    }
+
+    function formatBytes(value) { if (value < 1024) return value + " B"; if (value < 1024 * 1024) return (value / 1024).toFixed(1) + " KB"; return (value / (1024 * 1024)).toFixed(1) + " MB"; }
+    function escapeHTML(value) { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;"); }
 
     function renderPushRows(tbody, items) {
       tbody.replaceChildren();
@@ -585,47 +1107,9 @@ const template = String.raw`<!doctype html>
         });
         if (!response.ok) throw await responseError(response);
         state.submissions = (await response.json()).items;
-        const draftCount = state.submissions.filter((item) => item.status === "draft").length;
-        const action = state.user.whitelisted ? "全部发布" : "全部提交审核";
-        $("submit-all-drafts").disabled = draftCount === 0;
-        $("submit-all-drafts").textContent = draftCount
-          ? action + " (" + draftCount + ")"
-          : action;
         renderSubmissions();
       } catch (error) {
         showNotice("editor-notice", error.message, "error");
-      }
-    }
-
-    async function submitAllDrafts() {
-      const draftCount = state.submissions.filter((item) => item.status === "draft").length;
-      if (!draftCount || !confirm(
-        state.user.whitelisted
-          ? "确定直接发布全部 " + draftCount + " 个草稿？"
-          : "确定将全部 " + draftCount + " 个草稿提交管理员审核？"
-      )) return;
-      const button = $("submit-all-drafts");
-      button.disabled = true;
-      showNotice("submission-notice", "正在提交全部草稿…", "");
-      try {
-        const response = await fetch("/api/v1/user/plugins/submit-drafts", {
-          method: "POST",
-          credentials: "same-origin"
-        });
-        if (!response.ok) throw await responseError(response);
-        const result = await response.json();
-        await loadSubmissions();
-        await loadCurrentUser();
-        showNotice(
-          "submission-notice",
-          result.published_count !== undefined
-            ? "已直接上架 " + result.published_count + " 个插件。"
-            : "已提交 " + result.submitted_count + " 个插件，正在等待管理员审核。",
-          "ok"
-        );
-      } catch (error) {
-        showNotice("submission-notice", error.message, "error");
-        button.disabled = false;
       }
     }
 
@@ -679,28 +1163,43 @@ const template = String.raw`<!doctype html>
         identity.className = "plugin-identity";
         const iconSlot = document.createElement("span");
         iconSlot.className = "plugin-status-icon";
+        const iconURL = typeof item.manifest.icon === "string" ? item.manifest.icon.trim() : "";
+        const fallbackIcon = () => {
+          const fallback = document.createElement("span");
+          fallback.className = "plugin-icon plugin-icon-fallback";
+          fallback.textContent = "◇";
+          fallback.title = "默认图标";
+          fallback.setAttribute("aria-label", "默认图标");
+          return fallback;
+        };
+        if (iconURL) {
+          const icon = document.createElement("img");
+          icon.className = "plugin-icon";
+          icon.src = iconURL;
+          icon.alt = item.manifest.name + " 图标";
+          icon.loading = "lazy";
+          icon.addEventListener("error", () => { icon.replaceWith(fallbackIcon()); }, { once: true });
+          iconSlot.append(icon);
+        } else iconSlot.append(fallbackIcon());
+        identity.append(iconSlot);
+        const identityText = document.createElement("div");
+        const nameRow = document.createElement("div");
+        nameRow.className = "plugin-name-row";
+        const name = document.createElement("div");
+        name.className = "plugin-name";
+        name.textContent = item.manifest.name;
+        nameRow.append(name);
         if (item.visibility === "private") {
           const lock = document.createElement("span");
           lock.className = "private-lock";
           lock.title = "私有插件";
           lock.setAttribute("aria-label", "私有插件");
-          iconSlot.append(lock);
-        } else if (item.published_version) {
-          const dot = document.createElement("span");
-          dot.className = "market-dot";
-          dot.title = "已有版本上架";
-          dot.setAttribute("aria-label", "已有版本上架");
-          iconSlot.append(dot);
+          nameRow.append(lock);
         }
-        identity.append(iconSlot);
-        const identityText = document.createElement("div");
-        const name = document.createElement("div");
-        name.className = "plugin-name";
-        name.textContent = item.manifest.name;
         const id = document.createElement("div");
         id.className = "plugin-id";
         id.textContent = item.plugin_id;
-        identityText.append(name, id);
+        identityText.append(nameRow, id);
         identity.append(identityText);
         row.append(cell(identity));
         row.append(cell(item.version));
@@ -750,6 +1249,7 @@ const template = String.raw`<!doctype html>
         closePluginMenu();
         return;
       }
+      closeResourceMenu();
       closePluginMenu();
       state.actionTrigger = trigger;
       trigger.setAttribute("aria-expanded", "true");
@@ -845,6 +1345,12 @@ const template = String.raw`<!doctype html>
       if (state.actionTrigger) state.actionTrigger.setAttribute("aria-expanded", "false");
       state.actionTrigger = null;
       $("plugin-action-menu").hidden = true;
+    }
+
+    function closeResourceMenu() {
+      if (state.resourceActionTrigger) state.resourceActionTrigger.setAttribute("aria-expanded", "false");
+      state.resourceActionTrigger = null;
+      $("resource-action-menu").hidden = true;
     }
 
     async function deletePlugin(item, button) {
@@ -1117,10 +1623,48 @@ const template = String.raw`<!doctype html>
     }
 
     function newPlugin() {
+      state.selectedPluginType = null;
+      renderPluginTypeChoices();
+      showNotice("plugin-type-notice", "", "");
+      $("confirm-plugin-type").disabled = true;
+      $("plugin-type-dialog").showModal();
+    }
+
+    function renderPluginTypeChoices() {
+      const container = $("plugin-type-options");
+      container.replaceChildren();
+      for (const type of state.pluginTypes) {
+        const option = document.createElement("button");
+        option.type = "button";
+        option.className = "plugin-type-option";
+        option.dataset.type = type.value;
+        const title = document.createElement("strong");
+        title.textContent = type.name + "（" + type.value + "）";
+        const hint = document.createElement("span");
+        hint.textContent = type.description || "选择此类型创建插件";
+        option.append(title, hint);
+        option.addEventListener("click", () => {
+          state.selectedPluginType = type.value;
+          container.querySelectorAll(".plugin-type-option").forEach((item) => item.classList.toggle("selected", item === option));
+          $("confirm-plugin-type").disabled = false;
+        });
+        container.append(option);
+      }
+      if (!state.pluginTypes.length) {
+        showNotice("plugin-type-notice", "暂无可用的插件类型。", "error");
+      }
+    }
+
+    function closePluginTypeDialog() {
+      if ($("plugin-type-dialog").open) $("plugin-type-dialog").close();
+    }
+
+    function confirmPluginType() {
+      if (!state.selectedPluginType) return;
+      closePluginTypeDialog();
       state.editing = false;
-      const defaultType = state.pluginTypes[0]?.value || "";
       populate({
-        type: defaultType, name: "Example Plugin",
+        type: state.selectedPluginType, name: "Example Plugin",
         author: state.user.nick, version: "1.0.0", desc: "Plugin description",
         endpoint: ""
       });
@@ -1387,6 +1931,9 @@ const template = String.raw`<!doctype html>
     }
     async function responseError(response) {
       const body = await response.json().catch(() => ({}));
+      if (body.code === "database_not_initialized") {
+        return new Error("数据库尚未初始化，请管理员先执行 D1 数据库迁移。");
+      }
       return new Error(body.message || "请求失败 (" + response.status + ")");
     }
     function showNotice(id,message,kind) {

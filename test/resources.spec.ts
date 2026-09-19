@@ -152,6 +152,12 @@ describe("Resource Push and TVBox", () => {
       }),
     })).status).toBe(200);
 
+    expect((await fetchWorker("https://example.com/api/v1/user/tvbox/settings", {
+      method: "PUT",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ template: { sites: [] }, linked_plugin_id: pluginSubmission.plugin_id }),
+    })).status).toBe(200);
+
     const savedUserDraft = await fetchWorker(
       `https://example.com/api/v1/user/plugins/${pluginSubmission.plugin_id}/draft`,
       {
@@ -187,6 +193,7 @@ describe("Resource Push and TVBox", () => {
     expect(await linkedManifestResponse.json()).toMatchObject({
       id: pluginSubmission.plugin_id,
       version: "1.0.1",
+      icon: "https://admin.example.com/tvbox.png",
       endpoint: expect.stringMatching(/\/tvbox\/config\/tvbox\.json\?v=[a-f0-9]{64}$/),
     });
 
@@ -214,8 +221,10 @@ describe("Resource Push and TVBox", () => {
       published_version: "1.0.1",
       manifest: expect.objectContaining({
         version: "1.0.1",
-        icon: "https://admin.example.com/tvbox.png",
-        endpoint: expect.stringMatching(/\/tvbox\/config\/tvbox\.json\?v=[a-f0-9]{64}$/),
+        icon: "https://user.example.com/unsaved-icon.png",
+        name: "User draft name",
+        desc: "Unsaved user changes",
+        endpoint: "https://user.example.com/unsaved.json",
       }),
       history: [expect.objectContaining({
         version: "1.0.0",

@@ -860,6 +860,136 @@ paths:
           $ref: "#/components/responses/Error"
         "410":
           description: Historical upload is unavailable and no matching published version exists
+  /user/tvbox/settings:
+    get:
+      operationId: getUserTVBoxSettings
+      summary: Get the current user's TVBox template and plugin sync settings
+      security:
+        - userSession: []
+      responses:
+        "200": { description: User TVBox settings }
+    put:
+      operationId: saveUserTVBoxSettings
+      summary: Save the current user's TVBox template and owned linked plugin
+      security:
+        - userSession: []
+      responses:
+        "200": { description: Settings saved }
+        "409": { $ref: "#/components/responses/Error" }
+  /user/tvbox/generate:
+    post:
+      operationId: generateUserTVBoxConfig
+      summary: Generate the current user's TVBox configuration without syncing a plugin
+      security:
+        - userSession: []
+      responses:
+        "200": { description: Generated user configuration URL and checksum }
+  /user/tvbox/sync:
+    post:
+      operationId: syncUserTVBoxPlugin
+      summary: Generate the current user's TVBox configuration and publish a new linked plugin release
+      security:
+        - userSession: []
+      responses:
+        "200": { description: Generated configuration and plugin sync result }
+        "409": { $ref: "#/components/responses/Error" }
+  /user/tvbox/resources:
+    get:
+      operationId: listUserTVBoxResources
+      summary: List the current user's Python and CMS resources
+      security:
+        - userSession: []
+      responses:
+        "200": { description: User-owned TVBox resource list and Python quota }
+  /user/tvbox/resources/py:
+    post:
+      operationId: createUserTVBoxPythonResource
+      summary: Add an uploaded Python file or save a remote Python URL without downloading it
+      security:
+        - userSession: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+                url: { type: string, format: uri }
+                name: { type: string, maxLength: 255 }
+                is_adult: { type: boolean, default: false }
+      responses:
+        "201": { description: Resource created }
+        "409": { $ref: "#/components/responses/Error" }
+  /user/tvbox/resources/cms:
+    post:
+      operationId: createUserTVBoxCMSResource
+      summary: Add a CMS URL to the current user's resource list
+      security:
+        - userSession: []
+      responses:
+        "201": { description: Resource created }
+  /user/tvbox/resources/{resource_id}/content:
+    get:
+      operationId: getUserTVBoxResourceContent
+      summary: View an uploaded Python file or the saved remote URL without fetching it
+      security:
+        - userSession: []
+      parameters:
+        - { name: resource_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Resource content or URL }
+  /user/tvbox/resources/{resource_id}/push:
+    post:
+      operationId: pushUserTVBoxResource
+      summary: Associate a user resource with the public review queue
+      description: CMS, local Python, and remote Python resources are all supported. The Push operation records only the user resource ID; it does not upload or duplicate the source file.
+      security:
+        - userSession: []
+      parameters:
+        - { name: resource_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "202": { description: Resource Push submitted }
+        "409": { $ref: "#/components/responses/Error" }
+  /user/tvbox/resources/{resource_id}:
+    put:
+      operationId: updateUserTVBoxResource
+      summary: Replace an uploaded Python file or update a remote URL/CMS resource
+      security:
+        - userSession: []
+      parameters:
+        - { name: resource_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Resource updated }
+    delete:
+      operationId: deleteUserTVBoxResource
+      summary: Delete one of the current user's TVBox resources
+      security:
+        - userSession: []
+      parameters:
+        - { name: resource_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Resource deleted }
+  /user/tvbox/resources/{resource_id}/enabled:
+    put:
+      operationId: setUserTVBoxResourceEnabled
+      summary: Enable or disable a user TVBox resource
+      security:
+        - userSession: []
+      parameters:
+        - { name: resource_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Resource updated }
+  /user/tvbox/resources/{resource_id}/order:
+    put:
+      operationId: setUserTVBoxResourceOrder
+      summary: Set a user TVBox resource sort order
+      security:
+        - userSession: []
+      parameters:
+        - { name: resource_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Resource updated }
   /user/pushes:
     get:
       operationId: listUserResourcePushes

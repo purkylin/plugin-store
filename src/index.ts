@@ -70,6 +70,22 @@ import {
   saveTVBoxSettings,
   saveEmailSetting,
 } from "./tvbox";
+import {
+  createUserCMSResource,
+  createUserPythonResource,
+  deleteUserResource,
+  generateUserTVBoxConfig,
+  getUserTVBoxSettings,
+  listUserTVBoxResources,
+  pushUserTVBoxResource,
+  readUserResourceContent,
+  readUserTVBoxObject,
+  replaceUserPythonFile,
+  saveUserTVBoxSettings,
+  setUserResourceEnabled,
+  setUserResourceOrder,
+  updateUserResourceURL,
+} from "./user-tvbox";
 import { scheduleAdminEmail, scheduleEmail } from "./email";
 import { userSubmissionPage } from "./submit";
 import type { Env } from "./types";
@@ -120,6 +136,12 @@ async function route(request: Request, env: Env, context: ExecutionContext): Pro
     && (url.pathname === "/tvbox/config/tvbox.json" || /^\/tvbox\/py\/[A-Za-z0-9._-]+\.py$/.test(url.pathname))
   ) {
     return readTVBoxObject(env, url.pathname.slice(1), request, context);
+  }
+  if (
+    request.method === "GET"
+    && /^\/tvbox\/user\/[A-Za-z0-9_-]+\/(?:config\.json|py\/[0-9a-f-]+\.py)$/i.test(url.pathname)
+  ) {
+    return readUserTVBoxObject(env, url.pathname.slice(1), request, context);
   }
   if (request.method === "GET" && url.pathname === "/") {
     return userSubmissionPage("login");
@@ -186,6 +208,126 @@ async function route(request: Request, env: Env, context: ExecutionContext): Pro
   }
   if (request.method === "GET" && apiPath === "/v1/user/me") {
     return json({ user: await requireUser(request, env.DB) });
+  }
+  if (apiPath === "/v1/user/tvbox/settings") {
+    const user = await requireUser(request, env.DB);
+    if (request.method === "GET") return json(await getUserTVBoxSettings(env.DB, user.id));
+    if (request.method === "PUT") return json(await saveUserTVBoxSettings(env.DB, user.id, await readJSON(request)));
+  }
+  if (request.method === "POST" && apiPath === "/v1/user/tvbox/generate") {
+    const user = await requireUser(request, env.DB);
+    return json(await generateUserTVBoxConfig(env, user.id, request.url, false));
+  }
+  if (request.method === "POST" && apiPath === "/v1/user/tvbox/sync") {
+    const user = await requireUser(request, env.DB);
+    return json(await generateUserTVBoxConfig(env, user.id, request.url, true));
+  }
+  if (request.method === "GET" && apiPath === "/v1/user/tvbox/resources") {
+    const user = await requireUser(request, env.DB);
+    return json(await listUserTVBoxResources(env.DB, user.id));
+  }
+  if (request.method === "POST" && apiPath === "/v1/user/tvbox/resources/py") {
+    const user = await requireUser(request, env.DB);
+    return json(await createUserPythonResource(env, user, await request.formData()), 201);
+  }
+  if (request.method === "POST" && apiPath === "/v1/user/tvbox/resources/cms") {
+    const user = await requireUser(request, env.DB);
+    return json(await createUserCMSResource(env.DB, user, await readJSON(request)), 201);
+  }
+  if (
+    request.method === "POST"
+    && segments.length === 6
+    && segments[0] === "v1"
+    && segments[1] === "user"
+    && segments[2] === "tvbox"
+    && segments[3] === "resources"
+    && segments[5] === "push"
+  ) {
+    const user = await requireUser(request, env.DB);
+    const result = await pushUserTVBoxResource(env, user, decodeURIComponent(segments[4] ?? ""));
+    notifyResourceReceived(context, env, result.push);
+    return json({ resource: result.resource, push: publicPush(result.push) }, 202);
+  }
+  if (
+    request.method === "GET"
+    && segments.length === 6
+    && segments[0] === "v1"
+    && segments[1] === "user"
+    && segments[2] === "tvbox"
+    && segments[3] === "resources"
+    && segments[5] === "content"
+  ) {
+    const user = await requireUser(request, env.DB);
+    return json(await readUserResourceContent(env, user.id, decodeURIComponent(segments[4] ?? "")), 200, {
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+    });
+  }
+  if (
+    segments.length === 6
+    && request.method === "PUT"
+    && segments[0] === "v1"
+    && segments[1] === "user"
+    && segments[2] === "tvbox"
+    && segments[3] === "resources"
+    && segments[5] === "enabled"
+  ) {
+    const user = await requireUser(request, env.DB);
+    return json(await setUserResourceEnabled(
+      env.DB,
+      user.id,
+      decodeURIComponent(segments[4] ?? ""),
+      parseEnabled(await readJSON(request)),
+    ));
+  }
+  if (
+    segments.length === 6
+    && request.method === "PUT"
+    && segments[0] === "v1"
+    && segments[1] === "user"
+    && segments[2] === "tvbox"
+    && segments[3] === "resources"
+    && segments[5] === "order"
+  ) {
+    const user = await requireUser(request, env.DB);
+    const body = await readJSON(request);
+    if (typeof body !== "object" || body === null || Array.isArray(body) || typeof (body as Record<string, unknown>).sort_order !== "number") {
+      throw new HTTPError(400, "invalid_sort_order", "sort_order 必须是整数。");
+    }
+    return json(await setUserResourceOrder(
+      env.DB,
+      user.id,
+      decodeURIComponent(segments[4] ?? ""),
+      (body as Record<string, unknown>).sort_order as number,
+    ));
+  }
+  if (
+    segments.length === 5
+    && segments[0] === "v1"
+    && segments[1] === "user"
+    && segments[2] === "tvbox"
+    && segments[3] === "resources"
+  ) {
+    const user = await requireUser(request, env.DB);
+    const resourceID = decodeURIComponent(segments[4] ?? "");
+    if (request.method === "PUT") {
+      const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+      if (contentType.includes("multipart/form-data")) {
+        const form = await request.formData();
+        return json(await replaceUserPythonFile(
+          env,
+          user.id,
+          resourceID,
+          form.get("file") instanceof File ? form.get("file") as File : null,
+          form.has("is_adult") ? ["true", "1", "on"].includes(String(form.get("is_adult"))) : undefined,
+        ));
+      }
+      return json(await updateUserResourceURL(env.DB, user.id, resourceID, await readJSON(request)));
+    }
+    if (request.method === "DELETE") {
+      await deleteUserResource(env, user.id, resourceID);
+      return new Response(null, { status: 204 });
+    }
   }
   if (request.method === "GET" && apiPath === "/v1/user/submissions") {
     const user = await requireUser(request, env.DB);
@@ -1173,12 +1315,6 @@ function notifyResourceReceived(
   push: ResourcePushRow,
 ): void {
   const label = resourceLabel(push);
-  scheduleEmail(context, env, {
-    to: push.email,
-    subject: `Push 已收到：${label}`,
-    title: "我们已收到你的 Push",
-    lines: [`资源：${label}`, "管理员处理后，你会再次收到邮件，也可以在提交记录中查看状态。"],
-  });
   scheduleAdminEmail(context, env, `待处理 Push：${label}`, "有新的资源 Push", [
     `提交用户：${push.nick} (${push.email})`,
     `资源类型：${push.resource_type.toUpperCase()}`,

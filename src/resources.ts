@@ -12,6 +12,7 @@ export interface ResourcePushRow {
   email: string;
   nick: string;
   resource_type: ResourceType;
+  user_resource_id: string | null;
   file_name: string | null;
   script_key: string | null;
   staging_r2_key: string | null;
@@ -151,6 +152,56 @@ export async function createCMSPush(
   return requireResourcePush(db, id);
 }
 
+export async function createUserResourcePush(
+  db: D1Database,
+  user: AuthenticatedUser,
+  resource: {
+    id: string;
+    resourceType: ResourceType;
+    sourceType: "upload" | "url";
+    name: string;
+    sourceURL: string | null;
+    fileSize: number | null;
+    checksum: string | null;
+    isAdult: boolean;
+  },
+): Promise<ResourcePushRow> {
+  const existing = await db.prepare(
+    "SELECT id FROM resource_pushes WHERE user_resource_id = ?",
+  ).bind(resource.id).first<{ id: string }>();
+  if (existing !== null) {
+    throw new HTTPError(409, "resource_already_pushed", "这个资源已经 Push 过了。");
+  }
+
+  const isPython = resource.resourceType === "py";
+  const isCMS = resource.resourceType === "cms";
+  const normalizedURL = isCMS && resource.sourceURL ? normalizeCMSURL(resource.sourceURL) : null;
+  const pushedAt = new Date().toISOString();
+  const id = crypto.randomUUID();
+  await db.prepare(`
+    INSERT INTO resource_pushes (
+      id, user_id, resource_type, user_resource_id, file_name, script_key,
+      staging_r2_key, file_size, sha256, cms_name, cms_url, normalized_cms_url,
+      user_note, is_adult, status, rejection_reason, review_note, pushed_at,
+      reviewed_at, reviewed_by
+    ) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, NULL, ?, 'pending', NULL, NULL, ?, NULL, NULL)
+  `).bind(
+    id,
+    user.id,
+    resource.resourceType,
+    resource.id,
+    isPython ? resource.name : null,
+    isPython && resource.sourceType === "upload" ? resource.fileSize : null,
+    isPython && resource.sourceType === "upload" ? resource.checksum : null,
+    isCMS ? resource.name : null,
+    isCMS ? resource.sourceURL : null,
+    normalizedURL,
+    resource.isAdult ? 1 : 0,
+    pushedAt,
+  ).run();
+  return requireResourcePush(db, id);
+}
+
 export async function listUserResourcePushes(
   db: D1Database,
   userID: string,
@@ -204,6 +255,66 @@ export async function listPendingResourcePushes(
   };
 }
 
+interface ReferencedUserResourceRow {
+  id: string;
+  user_id: string;
+  resource_type: ResourceType;
+  source_type: "upload" | "url";
+  name: string;
+  source_url: string | null;
+  r2_key: string | null;
+  file_size: number | null;
+  sha256: string | null;
+  is_adult: number;
+}
+
+async function getReferencedUserResource(
+  env: Env,
+  push: ResourcePushRow,
+): Promise<ReferencedUserResourceRow> {
+  const resource = await env.DB.prepare(`
+    SELECT id, user_id, resource_type, source_type, name, source_url,
+           r2_key, file_size, sha256, is_adult
+    FROM user_tvbox_resources
+    WHERE id = ? AND user_id = ?
+  `).bind(push.user_resource_id, push.user_id).first<ReferencedUserResourceRow>();
+  if (!resource || resource.resource_type !== push.resource_type) {
+    throw new HTTPError(409, "resource_unavailable", "关联的用户资源不存在或类型已改变。");
+  }
+  return resource;
+}
+
+async function readPythonPushSource(
+  env: Env,
+  push: ResourcePushRow,
+  resource: ReferencedUserResourceRow | null,
+): Promise<{ bytes: Uint8Array; fileName: string }> {
+  if (resource) {
+    if (resource.source_type === "upload") {
+      const object = resource.r2_key ? await env.STORAGE.get(resource.r2_key) : null;
+      if (!object) {
+        throw new HTTPError(410, "resource_content_unavailable", "关联的本地 Python 文件已不可用。");
+      }
+      return {
+        bytes: new Uint8Array(await object.arrayBuffer()),
+        fileName: resource.name,
+      };
+    }
+    const downloaded = await downloadPythonFile(resource.source_url);
+    return downloaded;
+  }
+
+  const stagingKey = push.staging_r2_key as string;
+  const object = await env.STORAGE.get(stagingKey);
+  if (object === null) {
+    throw new HTTPError(409, "staging_file_missing", "The staged Python file no longer exists.");
+  }
+  return {
+    bytes: new Uint8Array(await object.arrayBuffer()),
+    fileName: push.file_name ?? `${push.script_key}.py`,
+  };
+}
+
 export async function acceptResourcePush(
   env: Env,
   pushID: string,
@@ -217,18 +328,18 @@ export async function acceptResourcePush(
     ? push.is_adult === 1
     : parseBoolean(body.is_adult, false);
   const reviewedAt = new Date().toISOString();
+  const referencedResource = push.user_resource_id
+    ? await getReferencedUserResource(env, push)
+    : null;
   if (push.resource_type === "py") {
-    const stagingKey = push.staging_r2_key as string;
-    const object = await env.STORAGE.get(stagingKey);
-    if (object === null) {
-      throw new HTTPError(409, "staging_file_missing", "The staged Python file no longer exists.");
-    }
-    const bytes = new Uint8Array(await object.arrayBuffer());
+    const source = await readPythonPushSource(env, push, referencedResource);
+    const bytes = source.bytes;
     const checksum = await sha256Bytes(bytes);
-    if (checksum !== push.sha256) {
+    if (!push.user_resource_id && checksum !== push.sha256) {
       throw new HTTPError(409, "staging_file_changed", "The staged Python file failed integrity validation.");
     }
-    const scriptKey = push.script_key as string;
+    const submittedFileName = validatePythonFileName(source.fileName);
+    const scriptKey = await scriptKeyFromFileName(submittedFileName);
     const fileName = `${scriptKey}.py`;
     const r2Key = `tvbox/py/${fileName}`;
     const existing = await env.DB.prepare(
@@ -266,7 +377,7 @@ export async function acceptResourcePush(
         customMetadata: { sha256: checksum, cache_version: String(cacheVersion) },
       });
     }
-    const sourceDisplayName = (existing?.original_file_name ?? push.file_name ?? fileName).replace(/\.py$/i, "");
+    const sourceDisplayName = (existing?.original_file_name ?? push.file_name ?? submittedFileName).replace(/\.py$/i, "");
     // The TVBox display name is immutable: keep the original uploaded file name
     // and ignore any administrative rename attempt during later overwrites.
     const displayName = existing?.display_name && existing.display_name !== existing.script_key
@@ -304,16 +415,26 @@ export async function acceptResourcePush(
         existing?.created_at ?? reviewedAt,
         changed ? reviewedAt : reviewedAt,
       ),
-      acceptedStatement(env.DB, pushID, reviewNote, reviewedAt),
+      acceptedStatement(env.DB, pushID, reviewNote, reviewedAt, {
+        fileName: push.file_name ?? submittedFileName,
+        scriptKey,
+        fileSize: bytes.byteLength,
+        sha256: checksum,
+      }),
     ]);
     // Retain the immutable upload for author history and review previews.
 
   } else {
-    const name = parseOptionalText(body.cms_name, "cms_name", 100) ?? push.cms_name as string;
+    const cmsResource = referencedResource?.resource_type === "cms" ? referencedResource : null;
+    const name = cmsResource?.name
+      ?? parseOptionalText(body.cms_name, "cms_name", 100)
+      ?? push.cms_name as string;
+    const cmsURL = cmsResource?.source_url ?? push.cms_url as string;
+    const normalizedCMSURL = normalizeCMSURL(cmsURL);
     const requestedSiteKey = body.site_key === undefined ? null : parseSiteKey(body.site_key, pushID);
     const existingURL = await env.DB.prepare(
       "SELECT id, site_key FROM cms_sources WHERE normalized_url = ?",
-    ).bind(push.normalized_cms_url).first<{ id: string; site_key: string }>();
+    ).bind(normalizedCMSURL).first<{ id: string; site_key: string }>();
     if (existingURL !== null && !overwrite) {
       throw new HTTPError(409, "resource_conflict", "已有相同 CMS URL，需要确认是否覆盖。");
     }
@@ -343,8 +464,8 @@ export async function acceptResourcePush(
         crypto.randomUUID(),
         siteKey,
         name,
-        push.cms_url,
-        push.normalized_cms_url,
+        cmsURL,
+        normalizedCMSURL,
         isAdult ? 1 : 0,
         reviewedAt,
         reviewedAt,
@@ -357,8 +478,8 @@ export async function acceptResourcePush(
       `).bind(
         siteKey,
         name,
-        push.cms_url,
-        push.normalized_cms_url,
+        cmsURL,
+        normalizedCMSURL,
         isAdult ? 1 : 0,
         reviewedAt,
         existingURL.id,
@@ -370,7 +491,11 @@ export async function acceptResourcePush(
         WHERE id = ?
       `).bind(push.user_id),
       resourceStatement,
-      acceptedStatement(env.DB, pushID, reviewNote, reviewedAt),
+      acceptedStatement(env.DB, pushID, reviewNote, reviewedAt, {
+        cmsName: name,
+        cmsURL,
+        normalizedCMSURL,
+      }),
     ]);
   }
   return requireResourcePush(env.DB, pushID);
@@ -510,7 +635,43 @@ function acceptedStatement(
   pushID: string,
   reviewNote: string | null,
   reviewedAt: string,
+  metadata?:
+    | { fileName: string; scriptKey: string; fileSize: number; sha256: string }
+    | { cmsName: string; cmsURL: string; normalizedCMSURL: string },
 ): D1PreparedStatement {
+  if (metadata && "fileName" in metadata) {
+    return db.prepare(`
+      UPDATE resource_pushes
+      SET file_name = ?, script_key = ?, file_size = ?, sha256 = ?,
+          status = 'accepted', rejection_reason = NULL, review_note = ?,
+          reviewed_at = ?, reviewed_by = 'admin'
+      WHERE id = ? AND status = 'pending'
+    `).bind(
+      metadata.fileName,
+      metadata.scriptKey,
+      metadata.fileSize,
+      metadata.sha256,
+      reviewNote,
+      reviewedAt,
+      pushID,
+    );
+  }
+  if (metadata) {
+    return db.prepare(`
+      UPDATE resource_pushes
+      SET cms_name = ?, cms_url = ?, normalized_cms_url = ?,
+          status = 'accepted', rejection_reason = NULL, review_note = ?,
+          reviewed_at = ?, reviewed_by = 'admin'
+      WHERE id = ? AND status = 'pending'
+    `).bind(
+      metadata.cmsName,
+      metadata.cmsURL,
+      metadata.normalizedCMSURL,
+      reviewNote,
+      reviewedAt,
+      pushID,
+    );
+  }
   return db.prepare(`
     UPDATE resource_pushes
     SET status = 'accepted', rejection_reason = NULL, review_note = ?,
@@ -550,6 +711,7 @@ function getResourcePush(
 function toUserPush(row: ResourcePushRow) {
   return {
     id: row.id,
+    resource_id: row.user_resource_id,
     resource_type: row.resource_type,
     name: row.resource_type === "py" ? row.file_name : row.cms_name,
     user_note: row.user_note,
@@ -693,10 +855,40 @@ export async function readResourcePushContent(env: Env, id: string, userID?: str
   if (!push || (userID !== undefined && push.user_id !== userID)) {
     throw new HTTPError(404, "push_not_found", "Push 不存在。");
   }
-  const name = push.resource_type === "py" ? push.file_name : push.cms_name;
-  if (push.resource_type === "cms") {
-    return { name, resource_type: "cms", content: JSON.stringify({ name: push.cms_name, url: push.cms_url, note: push.user_note, is_adult: push.is_adult === 1 }, null, 2) };
+  let referencedResource: ReferencedUserResourceRow | null = null;
+  if (push.user_resource_id) {
+    try {
+      referencedResource = await getReferencedUserResource(env, push);
+    } catch (error) {
+      // Accepted submissions retain their published snapshot even if the
+      // user's source resource was later removed.
+      if (push.status !== "accepted") throw error;
+    }
   }
+  if (push.resource_type === "cms") {
+    const name = referencedResource?.name ?? push.cms_name;
+    const url = referencedResource?.source_url ?? push.cms_url;
+    if (!name || !url) {
+      throw new HTTPError(410, "push_content_unavailable", "这条历史 Push 的资源信息已不可用，无法查看。");
+    }
+    return {
+      name,
+      resource_type: "cms",
+      content: JSON.stringify({ name, url, note: push.user_note, is_adult: push.is_adult === 1 }, null, 2),
+    };
+  }
+
+  if (push.status !== "accepted" && referencedResource) {
+    const source = await readPythonPushSource(env, push, referencedResource);
+    const checksum = await sha256Bytes(source.bytes);
+    return {
+      name: source.fileName,
+      resource_type: "py",
+      content: new TextDecoder().decode(source.bytes),
+      sha256: checksum,
+    };
+  }
+
   let object = push.staging_r2_key ? await env.STORAGE.get(push.staging_r2_key) : null;
   // Older reviews deleted their upload: only use the published version when
   // its bytes match this submission, never silently display a newer version.
@@ -705,8 +897,13 @@ export async function readResourcePushContent(env: Env, id: string, userID?: str
   }
   if (object) {
     const bytes = new Uint8Array(await object.arrayBuffer());
-    if (await sha256Bytes(bytes) === push.sha256) {
-      return { name, resource_type: "py", content: new TextDecoder().decode(bytes), sha256: push.sha256 };
+    if (push.sha256 && await sha256Bytes(bytes) === push.sha256) {
+      return {
+        name: push.file_name ?? referencedResource?.name ?? `${push.script_key}.py`,
+        resource_type: "py",
+        content: new TextDecoder().decode(bytes),
+        sha256: push.sha256,
+      };
     }
   }
   throw new HTTPError(410, "push_content_unavailable", "这条历史 Push 的原始内容已不可用，无法查看当时提交的版本。");

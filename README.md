@@ -26,6 +26,27 @@ Local pages:
 `.dev.vars` contains local-only values and is ignored by Git. Resend variables
 are optional locally; leave them empty to disable email delivery.
 
+### Upgrade an existing local or remote database
+
+After pulling a version that adds new tables, apply the migration before
+opening the user portal:
+
+```bash
+# Local D1
+npm run db:migrate:local
+
+# Cloudflare D1
+npm run db:migrate:remote
+```
+
+The user portal then exposes `资源列表` after login. `审核 Push` remains the
+separate public-resource review flow. User-managed uploaded Python files and
+remote URLs are handled from `资源列表`; remote URLs are saved as addresses
+only and are not downloaded to R2. CMS, local Python, and remote Python
+resources can be pushed by resource ID; the Push action does not upload a
+second copy. The reviewer reads the referenced source when accepting it into
+the public resource pool.
+
 ## Deploy
 
 `wrangler.jsonc` currently uses:

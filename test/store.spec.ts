@@ -1278,7 +1278,7 @@ describe("Plugin Store API", () => {
     expect(submitHTML).toContain("保存草稿");
     expect(submitHTML).toContain("批量导入 JSON");
     expect(submitHTML).toContain('id="import-json-file"');
-    expect(submitHTML).toContain("全部提交审核");
+    expect(submitHTML).not.toContain("全部提交审核");
     expect(submitHTML).not.toContain("scrollIntoView");
     expect(submitHTML).toContain('id="editor-dialog"');
     expect(submitHTML).toContain("plugin-name");
@@ -1297,10 +1297,10 @@ describe("Plugin Store API", () => {
     expect(submitHTML).toContain('id="plugin-action-menu"');
     expect(submitHTML).not.toContain('id="plugin-menu-dialog"');
     expect(submitHTML).toContain('id="toast"');
-    expect(submitHTML).toContain('id="new-push"');
-    expect(submitHTML).toContain('id="push-dialog"');
+    expect(submitHTML).toContain('id="new-user-resource"');
+    expect(submitHTML).toContain('id="user-resource-dialog"');
     expect(submitHTML).not.toContain('id="all-pushes"');
-    expect(submitHTML).not.toContain('id="push-history-dialog"');
+    expect(submitHTML).toContain('id="push-history-dialog"');
     expect(submitHTML).not.toContain("<th>通过版本</th>");
 
     const registerPage = await fetchWorker("https://example.com/register");
