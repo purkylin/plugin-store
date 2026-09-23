@@ -646,7 +646,7 @@ paths:
   /admin/users/stats:
     get:
       operationId: getAdminUserStats
-      summary: Get registered-user counts and the top five plugin contributors
+      summary: Get registered-user, private-plugin, and uploaded-Python counts plus the top five plugin contributors
       security:
         - adminToken: []
       responses:
@@ -1568,7 +1568,7 @@ components:
           description: Contribution points earned from accepted plugins and resources.
     AdminUserStats:
       type: object
-      required: [total_users, whitelisted_users, top_contributors]
+      required: [total_users, whitelisted_users, private_plugins, uploaded_python_count, top_contributors]
       properties:
         total_users:
           type: integer
@@ -1576,6 +1576,14 @@ components:
         whitelisted_users:
           type: integer
           minimum: 0
+        private_plugins:
+          type: integer
+          minimum: 0
+          description: Number of private plugin drafts.
+        uploaded_python_count:
+          type: integer
+          minimum: 0
+          description: Number of user-uploaded Python resources, excluding remote Python URLs.
         top_contributors:
           type: array
           maxItems: 5

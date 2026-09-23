@@ -223,6 +223,11 @@ export async function getAdminUserStats(db: D1Database) {
     FROM plugin_drafts
     WHERE is_private = 1
   `).first<{ private_plugins: number }>();
+  const uploadedPythonCounts = await db.prepare(`
+    SELECT COUNT(*) AS uploaded_python_count
+    FROM user_tvbox_resources
+    WHERE resource_type = 'py' AND source_type = 'upload'
+  `).first<{ uploaded_python_count: number }>();
   const contributors = await db.prepare(`
     ${adminUserSelect()}
     WHERE EXISTS (
@@ -237,6 +242,7 @@ export async function getAdminUserStats(db: D1Database) {
     total_users: counts?.total_users ?? 0,
     whitelisted_users: counts?.whitelisted_users ?? 0,
     private_plugins: privateCounts?.private_plugins ?? 0,
+    uploaded_python_count: uploadedPythonCounts?.uploaded_python_count ?? 0,
     top_contributors: contributors.results.map(toAdminUser),
   };
 }

@@ -12,6 +12,7 @@ describe("User TVBox resources", () => {
       password_confirmation: "user-tvbox-password",
     });
     const cookie = registration.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+    const statsBeforeUpload = await adminStats();
 
     const upload = new FormData();
     upload.append("file", new File(["print('first')\n"], "first.py", { type: "text/x-python" }));
@@ -21,6 +22,7 @@ describe("User TVBox resources", () => {
     expect(uploadedResponse.status).toBe(201);
     const uploaded = await uploadedResponse.json<{ id: string; source_type: string; file_size: number }>();
     expect(uploaded).toMatchObject({ source_type: "upload", file_size: 15 });
+    expect((await adminStats()).uploaded_python_count).toBe(statsBeforeUpload.uploaded_python_count + 1);
 
     const remote = new FormData();
     remote.append("url", "https://example.com/remote.py");
@@ -32,6 +34,7 @@ describe("User TVBox resources", () => {
     expect(remoteResponse.status).toBe(201);
     const remoteResource = await remoteResponse.json<{ id: string; source_type: string; source_url: string; is_adult: boolean }>();
     expect(remoteResource).toMatchObject({ source_type: "url", source_url: "https://example.com/remote.py", is_adult: true });
+    expect((await adminStats()).uploaded_python_count).toBe(statsBeforeUpload.uploaded_python_count + 1);
 
     const cmsResponse = await call("user/tvbox/resources/cms", {
       method: "POST",
@@ -184,4 +187,12 @@ describe("User TVBox resources", () => {
 function call(path: string, init: RequestInit = {}): Promise<Response> {
   const url = path.startsWith("http") ? path : `https://example.com/api/v1/${path}`;
   return exports.default.fetch(new Request(url, init));
+}
+
+async function adminStats(): Promise<{ uploaded_python_count: number }> {
+  const response = await call("admin/users/stats", {
+    headers: { authorization: "Bearer test-admin-token" },
+  });
+  expect(response.status).toBe(200);
+  return response.json();
 }

@@ -471,11 +471,13 @@ describe("Plugin Store API", () => {
     const statsBody = await stats.json<{
       total_users: number;
       whitelisted_users: number;
+      uploaded_python_count: number;
       top_contributors: Array<{ id: string; contribution_count: number }>;
     }>();
     expect(statsBody).toMatchObject({
       total_users: expect.any(Number),
       whitelisted_users: expect.any(Number),
+      uploaded_python_count: expect.any(Number),
     });
     expect(statsBody.top_contributors[0]).toMatchObject({
       id: account.user.id,
@@ -1278,6 +1280,7 @@ describe("Plugin Store API", () => {
     expect(html).toContain("待审核投稿");
     expect(html).toContain("已合并插件");
     expect(html).toContain("用户统计");
+    expect(html).toContain("用户上传 PY");
     expect(html).toContain("贡献用户 Top 5");
     expect(html).toContain("白名单管理");
     expect(html).toContain("查看插件");

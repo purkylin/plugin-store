@@ -149,7 +149,7 @@ const template = String.raw`<!doctype html>
     .email-setting .checks { padding: 0; }
     .email-setting form { display: flex; align-items: center; gap: 14px; padding: 0; }
     .email-setting .button { padding: 7px 11px; }
-    .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 180px)); gap: 12px; padding: 20px; }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 180px)); gap: 12px; padding: 20px; }
     .metric { padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(2, 10, 19, .3); }
     .metric strong { display: block; font-size: 26px; line-height: 1.2; }
     .metric span { color: var(--muted); font-size: 12px; }
@@ -356,6 +356,7 @@ const template = String.raw`<!doctype html>
         <div class="metric"><strong id="total-users">—</strong><span>注册用户</span></div>
         <div class="metric"><strong id="whitelisted-users">—</strong><span>白名单用户</span></div>
         <div class="metric"><strong id="private-plugins">—</strong><span>私有插件</span></div>
+        <div class="metric"><strong id="uploaded-python-count">—</strong><span>用户上传 PY</span></div>
       </div>
       <div class="user-sections">
         <section class="user-section">
@@ -1031,6 +1032,8 @@ const template = String.raw`<!doctype html>
         new Intl.NumberFormat().format(stats.whitelisted_users);
       $("private-plugins").textContent =
         new Intl.NumberFormat().format(stats.private_plugins ?? 0);
+      $("uploaded-python-count").textContent =
+        new Intl.NumberFormat().format(stats.uploaded_python_count ?? 0);
       renderUsers("contributor-rows", state.contributors, false);
       renderUsers("user-rows", state.users, true);
       $("contributors-empty").hidden = state.contributors.length !== 0;
