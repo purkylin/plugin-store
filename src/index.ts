@@ -199,11 +199,30 @@ async function route(request: Request, env: Env, context: ExecutionContext): Pro
       { "set-cookie": createSessionCookie(session.token, request) },
     );
   }
+  if (request.method === "POST" && apiPath === "/v1/auth/mobile/login") {
+    const session = await loginUser(env.DB, await readJSON(request));
+    return json(
+      {
+        user: session.user,
+        token: session.token,
+        expires_at: session.expires_at,
+      },
+      200,
+      { "cache-control": "no-store" },
+    );
+  }
   if (request.method === "POST" && apiPath === "/v1/auth/logout") {
     await logoutUser(request, env.DB);
     return new Response(null, {
       status: 204,
       headers: { "set-cookie": clearSessionCookie(request) },
+    });
+  }
+  if (request.method === "POST" && apiPath === "/v1/auth/mobile/logout") {
+    await logoutUser(request, env.DB);
+    return new Response(null, {
+      status: 204,
+      headers: { "cache-control": "no-store" },
     });
   }
   if (request.method === "GET" && apiPath === "/v1/user/me") {

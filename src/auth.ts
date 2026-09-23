@@ -120,7 +120,7 @@ export async function requireUser(
   request: Request,
   db: D1Database,
 ): Promise<AuthenticatedUser> {
-  const token = readSessionCookie(request);
+  const token = readSessionToken(request);
   if (!token) {
     throw new HTTPError(401, "unauthorized", "A valid user session is required.");
   }
@@ -144,7 +144,7 @@ export async function requireUser(
 }
 
 export async function logoutUser(request: Request, db: D1Database): Promise<void> {
-  const token = readSessionCookie(request);
+  const token = readSessionToken(request);
   if (token) {
     await db.prepare("DELETE FROM user_sessions WHERE token_hash = ?")
       .bind(await sha256(token))
@@ -186,6 +186,15 @@ function readSessionCookie(request: Request): string | null {
     }
   }
   return null;
+}
+
+function readSessionToken(request: Request): string | null {
+  const authorization = request.headers.get("authorization");
+  if (authorization !== null) {
+    const match = /^Bearer\s+(\S+)$/i.exec(authorization.trim());
+    return match?.[1] ?? null;
+  }
+  return readSessionCookie(request);
 }
 
 async function prepareSession(userID: string) {

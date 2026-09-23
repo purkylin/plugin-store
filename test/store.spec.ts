@@ -1030,6 +1030,44 @@ describe("Plugin Store API", () => {
     expect(login.status).toBe(200);
     expect(sessionCookie(login)).toMatch(/^hawk_session=/);
 
+    const mobileLogin = await authRequest("/api/v1/auth/mobile/login", {
+      email: "AUTHOR@example.com",
+      password: "correct-horse-battery",
+    });
+    expect(mobileLogin.status).toBe(200);
+    expect(mobileLogin.headers.get("cache-control")).toBe("no-store");
+    const mobileSession = await mobileLogin.json<{
+      user: { id: string; email: string; nick: string };
+      token: string;
+      expires_at: string;
+    }>();
+    expect(mobileSession.user).toMatchObject({
+      email: "author@example.com",
+      nick: "ReviewAuthor",
+    });
+    expect(mobileSession.token.length).toBeGreaterThan(30);
+    expect(mobileSession.expires_at).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
+    );
+
+    const bearerMe = await fetchWorker("https://example.com/api/v1/user/me", {
+      headers: { authorization: `Bearer ${mobileSession.token}` },
+    });
+    expect(bearerMe.status).toBe(200);
+    expect(await bearerMe.json()).toMatchObject({
+      user: { id: mobileSession.user.id, email: "author@example.com" },
+    });
+
+    const mobileLogout = await fetchWorker("https://example.com/api/v1/auth/mobile/logout", {
+      method: "POST",
+      headers: { authorization: `Bearer ${mobileSession.token}` },
+    });
+    expect(mobileLogout.status).toBe(204);
+    expect(mobileLogout.headers.get("cache-control")).toBe("no-store");
+    expect((await fetchWorker("https://example.com/api/v1/user/me", {
+      headers: { authorization: `Bearer ${mobileSession.token}` },
+    })).status).toBe(401);
+
     const requestedManifest = {
       ...manifest,
       id: "client-chosen.plugin",
