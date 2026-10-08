@@ -869,6 +869,7 @@ paths:
       responses:
         "200": { description: User TVBox settings }
     put:
+      description: Saves user TVBox settings. Any owned plugin whose manifest type is tvbox may be linked, including unpublished public drafts and private plugins.
       operationId: saveUserTVBoxSettings
       summary: Save the current user's TVBox template and owned linked plugin
       security:

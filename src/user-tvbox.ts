@@ -2,14 +2,17 @@ import type { AuthenticatedUser } from "./auth";
 import { sha256Bytes, sha256Text } from "./crypto";
 import { HTTPError } from "./http";
 import {
+  getPrivatePluginForSync,
   getPluginForSync,
-  publishLinkedPluginRelease,
+  getPublicPluginDraftForSync,
   requirePluginOwnership,
+  savePluginDraft,
   type PluginSyncRow,
 } from "./repository";
 import { createUserResourcePush } from "./resources";
 import { validateUploadedPython } from "./remote-file";
 import type { Env, PluginManifestMetadata, PublishRequest } from "./types";
+import { compareVersions } from "./version";
 
 const maxPythonResources = 50;
 
@@ -68,9 +71,20 @@ export async function saveUserTVBoxSettings(
   const linkedPluginID = parseOptionalPluginID(body.linked_plugin_id);
   if (linkedPluginID !== null) {
     await requirePluginOwnership(db, linkedPluginID, userID);
-    if (await getPluginForSync(db, linkedPluginID) === null) {
-      throw new HTTPError(409, "plugin_not_published", "关联插件必须先成功上架。");
+    const [published, publicDraft, privateDraft] = await Promise.all([
+      getPluginForSync(db, linkedPluginID),
+      getPublicPluginDraftForSync(db, linkedPluginID, userID),
+      getPrivatePluginForSync(db, linkedPluginID, userID),
+    ]);
+    const linkedPlugin = publicDraft ?? published ?? privateDraft;
+    if (linkedPlugin === null) {
+      throw new HTTPError(
+        409,
+        "plugin_not_available_for_sync",
+        "找不到可以关联的插件草稿或已上架插件。",
+      );
     }
+    requireTVBoxPlugin(linkedPlugin);
   }
   await ensureSettings(db, userID);
   await db.prepare(`
@@ -406,7 +420,7 @@ export async function generateUserTVBoxConfig(
     const key = `${resource.resource_type}_${resource.id.replaceAll("-", "")}`;
     const api = resource.source_type === "url"
       ? resource.source_url as string
-      : `${publicBaseURL}/tvbox/user/${encodeURIComponent(settings.public_key)}/py/${encodeURIComponent(resource.id)}.py?v=${encodeURIComponent(resource.sha256 ?? "")}`;
+      : buildUserPythonURL(env, requestURL, publicBaseURL, settings, resource);
     return {
       key,
       name: `${resource.name}${resource.is_adult === 1 ? "🔞" : ""}`,
@@ -423,7 +437,10 @@ export async function generateUserTVBoxConfig(
   const generatedAt = new Date().toISOString();
   if (changed) {
     await env.STORAGE.put(settings.config_r2_key, configJSON, {
-      httpMetadata: { contentType: "application/json; charset=utf-8", cacheControl: "no-cache" },
+      httpMetadata: {
+        contentType: "application/json; charset=utf-8",
+        cacheControl: "public, max-age=86400",
+      },
       customMetadata: { sha256: checksum, user_id: userID },
     });
     await env.DB.prepare(`
@@ -477,19 +494,20 @@ export async function readUserTVBoxObject(env: Env, key: string, request: Reques
     }
     objectKey = resource.r2_key;
   }
+  const edgeCache = (caches as unknown as { default: Cache }).default;
+  const cached = await edgeCache.match(request);
+  if (cached) return cached;
   const object = await env.STORAGE.get(objectKey);
   if (!object) throw new HTTPError(404, "not_found", "File not found.");
   const headers = new Headers();
   object.writeHttpMetadata(headers);
   headers.set("etag", object.httpEtag);
-  headers.set("cache-control", configMatch ? "no-cache" : "public, max-age=31536000");
+  headers.set(
+    "cache-control",
+    configMatch ? "public, max-age=86400" : "public, max-age=31536000",
+  );
   const response = new Response(object.body, { headers });
-  if (pyMatch) {
-    const edgeCache = (caches as unknown as { default: Cache }).default;
-    const cached = await edgeCache.match(request);
-    if (cached) return cached;
-    context.waitUntil(edgeCache.put(request, response.clone()));
-  }
+  context.waitUntil(edgeCache.put(request, response.clone()));
   return response;
 }
 
@@ -503,10 +521,21 @@ async function syncUserLinkedPlugin(
     const settings = await ensureSettings(env.DB, userID);
     if (!settings.linked_plugin_id) throw new Error("尚未关联插件。");
     await requirePluginOwnership(env.DB, settings.linked_plugin_id, userID);
-    const row = await getPluginForSync(env.DB, settings.linked_plugin_id);
-    if (!row) throw new Error("关联插件不存在或尚未上架。");
+    const [published, publicDraft, privateDraft] = await Promise.all([
+      getPluginForSync(env.DB, settings.linked_plugin_id),
+      getPublicPluginDraftForSync(env.DB, settings.linked_plugin_id, userID),
+      getPrivatePluginForSync(env.DB, settings.linked_plugin_id, userID),
+    ]);
+    const row = publicDraft ?? published ?? privateDraft;
+    if (!row) throw new Error("关联插件不存在。");
+    requireTVBoxPlugin(row);
+    const isPrivate = privateDraft !== null;
     const manifest = JSON.parse(row.manifest_json) as Record<string, unknown>;
-    const version = incrementPatchVersion(row.latest_version);
+    const version = incrementPatchVersion(
+      published !== null && compareVersions(row.latest_version, published.latest_version) < 0
+        ? published.latest_version
+        : row.latest_version,
+    );
     const publishedAt = new Date().toISOString();
     const nextManifest = {
       ...manifest,
@@ -514,16 +543,18 @@ async function syncUserLinkedPlugin(
       endpoint: `${publicBaseURL}/tvbox/user/${encodeURIComponent(settings.public_key)}/config.json?v=${encodeURIComponent(configVersion)}`,
       update_time: publishedAt,
     };
-    const request = requestFromSyncRow(row, nextManifest);
+    const request = {
+      ...requestFromSyncRow(row, nextManifest),
+      visibility: isPrivate ? "private" as const : "public" as const,
+    };
     const metadata = metadataFromManifest(nextManifest);
     const manifestJSON = JSON.stringify(nextManifest);
-    await publishLinkedPluginRelease(
+    await savePluginDraft(
       env.DB,
+      userID,
       request,
       metadata,
       manifestJSON,
-      await sha256Text(manifestJSON),
-      publishedAt,
     );
     await env.DB.prepare(`
       UPDATE user_tvbox_settings
@@ -908,6 +939,17 @@ function metadataFromManifest(manifest: Record<string, unknown>): PluginManifest
   return { id, name, description, author, iconURL, version };
 }
 
+function requireTVBoxPlugin(row: PluginSyncRow): void {
+  const manifest = JSON.parse(row.manifest_json) as Record<string, unknown>;
+  if (manifest.type !== "tvbox") {
+    throw new HTTPError(
+      409,
+      "plugin_type_not_tvbox",
+      "只能关联类型为 tvbox 的插件。",
+    );
+  }
+}
+
 function incrementPatchVersion(value: string): string {
   const stable = value.split("-", 1)[0] ?? value;
   const parts = stable.split(".");
@@ -1018,4 +1060,23 @@ function resolvePublicBaseURL(env: Env, requestURL: string): string {
     || request.hostname === "::1";
   const value = localHost ? request.origin : (env.PUBLIC_ASSET_BASE_URL?.trim() || request.origin);
   return value.replace(/\/+$/, "");
+}
+
+function buildUserPythonURL(
+  env: Env,
+  requestURL: string,
+  publicBaseURL: string,
+  settings: UserTVBoxSettingsRow,
+  resource: UserTVBoxResourceRow,
+): string {
+  const request = new URL(requestURL);
+  const localHost = request.hostname === "localhost"
+    || request.hostname === "127.0.0.1"
+    || request.hostname === "::1";
+  const version = encodeURIComponent(resource.sha256 ?? "");
+  if (!localHost && env.PUBLIC_ASSET_BASE_URL?.trim() && resource.r2_key) {
+    const objectPath = resource.r2_key.split("/").map(encodeURIComponent).join("/");
+    return `${publicBaseURL}/${objectPath}?v=${version}`;
+  }
+  return `${request.origin}/tvbox/user/${encodeURIComponent(settings.public_key)}/py/${encodeURIComponent(resource.id)}.py?v=${version}`;
 }

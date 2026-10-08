@@ -1237,6 +1237,17 @@ describe("Plugin Store API", () => {
       author: "SomeoneElse",
     }, accountCookie)).status).toBe(400);
 
+    const pendingDeleteResponse = await submitNewUserManifest({
+      ...requestedManifest,
+      name: "Pending Delete",
+      endpoint: "https://example.com/pending-delete.json",
+    }, accountCookie);
+    expect(pendingDeleteResponse.status).toBe(202);
+    const pendingDelete = await pendingDeleteResponse.json<{
+      submission_id: string;
+      plugin_id: string;
+    }>();
+
     expect((await fetchWorker(
       `https://example.com/api/v1/user/plugins/${submission.plugin_id}`,
       {
@@ -1244,6 +1255,32 @@ describe("Plugin Store API", () => {
         headers: { cookie: secondCookie },
       },
     )).status).toBe(404);
+    const blockedDelete = await fetchWorker(
+      `https://example.com/api/v1/user/plugins/${pendingDelete.plugin_id}`,
+      {
+        method: "DELETE",
+        headers: { cookie: accountCookie },
+      },
+    );
+    expect(blockedDelete.status).toBe(409);
+    expect(await blockedDelete.json()).toMatchObject({
+      code: "review_already_pending",
+      message: "请先取消审核，再删除插件。",
+    });
+    expect((await fetchWorker(
+      `https://example.com/api/v1/user/submissions/${pendingDelete.submission_id}/cancel`,
+      {
+        method: "POST",
+        headers: { cookie: accountCookie },
+      },
+    )).status).toBe(200);
+    expect((await fetchWorker(
+      `https://example.com/api/v1/user/plugins/${pendingDelete.plugin_id}`,
+      {
+        method: "DELETE",
+        headers: { cookie: accountCookie },
+      },
+    )).status).toBe(204);
     expect((await fetchWorker(
       `https://example.com/api/v1/user/plugins/${submission.plugin_id}`,
       {

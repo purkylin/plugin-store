@@ -163,7 +163,7 @@ export async function generateTVBoxConfig(env: Env, requestURL: string) {
   await env.STORAGE.put(settings.config_r2_key, configJSON, {
     httpMetadata: {
       contentType: "application/json; charset=utf-8",
-      cacheControl: "no-cache",
+      cacheControl: "public, max-age=86400",
     },
     customMetadata: { sha256: checksum },
   });
@@ -228,10 +228,8 @@ export async function readTVBoxObject(
   }
   const isPython = key.startsWith("tvbox/py/");
   const edgeCache = (caches as unknown as { default: Cache }).default;
-  if (isPython) {
-    const cached = await edgeCache.match(request);
-    if (cached) return cached;
-  }
+  const cached = await edgeCache.match(request);
+  if (cached) return cached;
   const object = await env.STORAGE.get(key);
   if (object === null) {
     throw new HTTPError(404, "not_found", "File not found.");
@@ -240,14 +238,12 @@ export async function readTVBoxObject(
   object.writeHttpMetadata(headers);
   headers.set("etag", object.httpEtag);
   if (!isPython) {
-    headers.set("cache-control", "no-cache");
+    headers.set("cache-control", "public, max-age=86400");
   } else {
     headers.set("cache-control", "public, max-age=31536000");
   }
   const response = new Response(object.body, { headers });
-  if (isPython) {
-    context.waitUntil(edgeCache.put(request, response.clone()));
-  }
+  context.waitUntil(edgeCache.put(request, response.clone()));
   return response;
 }
 

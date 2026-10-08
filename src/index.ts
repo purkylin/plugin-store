@@ -678,9 +678,22 @@ async function route(request: Request, env: Env, context: ExecutionContext): Pro
   ) {
     const user = await requireUser(request, env.DB);
     const submissionID = decodeURIComponent(segments[3] ?? "");
-    if (!await cancelSubmission(env.DB, submissionID, user.id)) {
+    const submission = await getPendingSubmission(env.DB, submissionID);
+    if (
+      submission === null
+      || submission.user_id !== user.id
+      || !await cancelSubmission(env.DB, submissionID, user.id)
+    ) {
       return error("submission_not_found", "Pending submission not found.", 404);
     }
+    const manifest = JSON.parse(submission.manifest_json) as Record<string, unknown>;
+    const pluginName = typeof manifest.name === "string" ? manifest.name : submission.plugin_id;
+    scheduleAdminEmail(context, env, `投稿已取消：${pluginName}`, "用户取消了插件审核", [
+      `提交用户：${submission.nick} (${submission.email})`,
+      `插件：${pluginName}`,
+      `版本：${submission.version}`,
+      `投稿 ID：${submission.id}`,
+    ]);
     return json({ id: submissionID, status: "cancelled" });
   }
   if (

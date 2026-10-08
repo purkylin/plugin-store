@@ -47,6 +47,10 @@ resources can be pushed by resource ID; the Push action does not upload a
 second copy. The reviewer reads the referenced source when accepting it into
 the public resource pool.
 
+User TVBox settings may link any owned TVBox plugin, including unpublished
+public drafts, published plugins, and private plugins. Synchronization updates
+only the corresponding draft and never publishes a marketplace release.
+
 ## Deploy
 
 `wrangler.jsonc` currently uses:

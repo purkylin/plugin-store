@@ -112,6 +112,11 @@ describe("User TVBox resources", () => {
     remote.append("name", "远程脚本");
     remote.append("is_adult", "true");
     await call("user/tvbox/resources/py", { method: "POST", headers: { cookie }, body: remote });
+    const local = new FormData();
+    local.append("file", new File(["print('local')\n"], "local.py", { type: "text/x-python" }));
+    expect((await call("user/tvbox/resources/py", {
+      method: "POST", headers: { cookie }, body: local,
+    })).status).toBe(201);
     await call("user/tvbox/resources/cms", {
       method: "POST", headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({ name: "测试 CMS", url: "https://cms.example.com/api.php/provide/vod/" }),
@@ -125,15 +130,21 @@ describe("User TVBox resources", () => {
     const generated = await call("user/tvbox/generate", { method: "POST", headers: { cookie } });
     expect(generated.status).toBe(200);
     const result = await generated.json<{ config_url: string; resource_count: number }>();
-    expect(result).toMatchObject({ resource_count: 2 });
+    expect(result).toMatchObject({ resource_count: 3 });
     expect(result.config_url).not.toContain("&t=");
 
     const config = await call(result.config_url);
     expect(config.status).toBe(200);
-    expect(await config.json()).toMatchObject({ sites: expect.arrayContaining([
+    expect(config.headers.get("cache-control")).toBe("public, max-age=86400");
+    const configBody = await config.json<{ sites: Array<Record<string, unknown>> }>();
+    expect(configBody).toMatchObject({ sites: expect.arrayContaining([
       expect.objectContaining({ name: "远程脚本🔞", type: 3, api: "https://example.com/remote.py" }),
+      expect.objectContaining({ name: "local.py", type: 3, api: expect.stringMatching(/^https:\/\/cdn\.9228\.eu\/tvbox\/user\/python\/[a-f0-9]{64}\.py\?v=[a-f0-9]{64}$/) }),
       expect.objectContaining({ type: 1, api: "https://cms.example.com/api.php/provide/vod/" }),
     ]) });
+    const localAPI = String(configBody.sites.find((site) => site.name === "local.py")?.api);
+    const stored = await env.STORAGE.get(new URL(localAPI).pathname.slice(1));
+    expect(await stored?.text()).toBe("print('local')\n");
   });
 
   it("deduplicates identical uploaded Python files and releases storage after the last reference", async () => {
@@ -182,6 +193,188 @@ describe("User TVBox resources", () => {
     ).bind(shared?.sha256).first()).toBeNull();
     expect(await env.STORAGE.get(shared!.r2_key)).toBeNull();
   });
+
+  it("links and synchronizes a private plugin without publishing it", async () => {
+    await ensureTVBoxType();
+    const nick = `PrivateTVBox${Math.random().toString(36).slice(2, 8)}`;
+    const registration = await registerAndActivate({
+      email: `private-tvbox-${crypto.randomUUID()}@example.com`,
+      nick,
+      password: "private-tvbox-password",
+      password_confirmation: "private-tvbox-password",
+    });
+    const cookie = registration.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+    const privateResponse = await call("user/plugins/draft", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        visibility: "private",
+        manifest: {
+          type: "tvbox",
+          icon: "https://example.com/private-tvbox.png",
+          name: "Private TVBox",
+          author: nick,
+          version: "1.0.0",
+          desc: "Private TVBox config",
+          endpoint: "https://example.com/old-private.json",
+        },
+      }),
+    });
+    expect(privateResponse.status).toBe(201);
+    const privatePlugin = await privateResponse.json<{ plugin_id: string }>();
+
+    const saved = await call("user/tvbox/settings", {
+      method: "PUT",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        template: { sites: [] },
+        linked_plugin_id: privatePlugin.plugin_id,
+      }),
+    });
+    expect(saved.status).toBe(200);
+
+    const syncedResponse = await call("user/tvbox/sync", {
+      method: "POST",
+      headers: { cookie },
+    });
+    expect(syncedResponse.status).toBe(200);
+    expect(await syncedResponse.json()).toMatchObject({
+      plugin_sync_status: "synced",
+      plugin_sync_error: null,
+      plugin_version: "1.0.1",
+    });
+
+    const plugins = await call("user/submissions", { headers: { cookie } })
+      .then((response) => response.json<{
+        items: Array<{
+          plugin_id: string;
+          status: string;
+          visibility: string;
+          linked: boolean;
+          manifest: Record<string, unknown>;
+        }>;
+      }>());
+    expect(plugins.items).toContainEqual(expect.objectContaining({
+      plugin_id: privatePlugin.plugin_id,
+      status: "private",
+      visibility: "private",
+      linked: true,
+      manifest: expect.objectContaining({
+        version: "1.0.1",
+        icon: "https://example.com/private-tvbox.png",
+        endpoint: expect.stringMatching(/\/tvbox\/user\/[A-Za-z0-9_-]+\/config\.json\?v=/),
+      }),
+    }));
+    expect((await call(`plugins/${privatePlugin.plugin_id}/manifest`)).status).toBe(404);
+  });
+
+  it("links an unpublished public TVBox plugin and keeps published releases unchanged", async () => {
+    await ensureTVBoxType();
+    const nick = `PublicTVBox${Math.random().toString(36).slice(2, 8)}`;
+    const registration = await registerAndActivate({
+      email: `public-tvbox-${crypto.randomUUID()}@example.com`,
+      nick,
+      password: "public-tvbox-password",
+      password_confirmation: "public-tvbox-password",
+    });
+    const cookie = registration.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+    const draftResponse = await call("user/plugins/draft", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        visibility: "public",
+        manifest: {
+          type: "tvbox",
+          icon: "https://example.com/public-tvbox.png",
+          name: "Public TVBox",
+          author: nick,
+          version: "1.0.0",
+          desc: "Public TVBox config",
+          endpoint: "https://example.com/old-public.json",
+        },
+      }),
+    });
+    expect(draftResponse.status).toBe(201);
+    const draft = await draftResponse.json<{ plugin_id: string }>();
+
+    const saved = await call("user/tvbox/settings", {
+      method: "PUT",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ template: { sites: [] }, linked_plugin_id: draft.plugin_id }),
+    });
+    expect(saved.status).toBe(200);
+
+    const firstSync = await call("user/tvbox/sync", { method: "POST", headers: { cookie } });
+    expect(await firstSync.json()).toMatchObject({
+      plugin_sync_status: "synced",
+      plugin_version: "1.0.1",
+    });
+    expect((await call(`plugins/${draft.plugin_id}/manifest`)).status).toBe(404);
+
+    const submitted = await call("user/plugins/submit-drafts", { method: "POST", headers: { cookie } });
+    expect(submitted.status).toBe(202);
+    const submission = await submitted.json<{ items: Array<{ submission_id: string }> }>();
+    expect((await call(`admin/reviews/${submission.items[0]?.submission_id}/accept`, {
+      method: "POST",
+      headers: { authorization: "Bearer test-admin-token" },
+    })).status).toBe(200);
+
+    const publishedBeforeSync = await call(`plugins/${draft.plugin_id}/manifest`);
+    expect(await publishedBeforeSync.json()).toMatchObject({ version: "1.0.1" });
+
+    const secondSync = await call("user/tvbox/sync", { method: "POST", headers: { cookie } });
+    expect(await secondSync.json()).toMatchObject({
+      plugin_sync_status: "synced",
+      plugin_version: "1.0.2",
+    });
+    const publishedAfterSync = await call(`plugins/${draft.plugin_id}/manifest`);
+    expect(await publishedAfterSync.json()).toMatchObject({ version: "1.0.1" });
+
+    const plugins = await call("user/submissions", { headers: { cookie } })
+      .then((response) => response.json<{
+        items: Array<{ plugin_id: string; status: string; linked: boolean; manifest: Record<string, unknown> }>;
+      }>());
+    expect(plugins.items).toContainEqual(expect.objectContaining({
+      plugin_id: draft.plugin_id,
+      status: "draft",
+      linked: true,
+      manifest: expect.objectContaining({ version: "1.0.2" }),
+    }));
+  });
+
+  it("rejects linked plugins whose type is not tvbox", async () => {
+    const nick = `WrongType${Math.random().toString(36).slice(2, 8)}`;
+    const registration = await registerAndActivate({
+      email: `wrong-tvbox-type-${crypto.randomUUID()}@example.com`,
+      nick,
+      password: "wrong-type-password",
+      password_confirmation: "wrong-type-password",
+    });
+    const cookie = registration.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+    const draftResponse = await call("user/plugins/draft", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        visibility: "private",
+        manifest: {
+          type: "hot",
+          name: "Wrong type",
+          author: nick,
+          version: "1.0.0",
+          desc: "Not a TVBox plugin",
+          endpoint: "https://example.com/not-tvbox.json",
+        },
+      }),
+    });
+    const draft = await draftResponse.json<{ plugin_id: string }>();
+    const saved = await call("user/tvbox/settings", {
+      method: "PUT",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ template: { sites: [] }, linked_plugin_id: draft.plugin_id }),
+    });
+    expect(saved.status).toBe(409);
+    expect(await saved.json()).toMatchObject({ code: "plugin_type_not_tvbox" });
+  });
 });
 
 function call(path: string, init: RequestInit = {}): Promise<Response> {
@@ -195,4 +388,12 @@ async function adminStats(): Promise<{ uploaded_python_count: number }> {
   });
   expect(response.status).toBe(200);
   return response.json();
+}
+
+async function ensureTVBoxType(): Promise<void> {
+  const now = new Date().toISOString();
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO plugin_types (value, name, created_at, updated_at)
+    VALUES ('tvbox', 'TVBox', ?, ?)
+  `).bind(now, now).run();
 }

@@ -504,6 +504,34 @@ export async function getPluginForSync(
   `).bind(pluginID).first<PluginSyncRow>();
 }
 
+export async function getPrivatePluginForSync(
+  db: D1Database,
+  pluginID: string,
+  userID: string,
+): Promise<PluginSyncRow | null> {
+  return db.prepare(`
+    SELECT json_extract(d.manifest_json, '$.version') AS latest_version,
+           d.manifest_json, d.supports_ios, d.supports_tvos,
+           d.minimum_ios_version, d.minimum_tvos_version
+    FROM plugin_drafts d
+    WHERE d.plugin_id = ? AND d.user_id = ? AND d.is_private = 1
+  `).bind(pluginID, userID).first<PluginSyncRow>();
+}
+
+export async function getPublicPluginDraftForSync(
+  db: D1Database,
+  pluginID: string,
+  userID: string,
+): Promise<PluginSyncRow | null> {
+  return db.prepare(`
+    SELECT json_extract(d.manifest_json, '$.version') AS latest_version,
+           d.manifest_json, d.supports_ios, d.supports_tvos,
+           d.minimum_ios_version, d.minimum_tvos_version
+    FROM plugin_drafts d
+    WHERE d.plugin_id = ? AND d.user_id = ? AND d.is_private = 0
+  `).bind(pluginID, userID).first<PluginSyncRow>();
+}
+
 export async function getPluginNotificationRecipient(
   db: D1Database,
   pluginID: string,
@@ -571,6 +599,18 @@ export async function deleteOwnedPlugin(
   ).bind(pluginID).first<{ user_id: string }>();
   if (owner === null || owner.user_id !== userID) {
     throw new HTTPError(404, "plugin_not_found", "Plugin not found.");
+  }
+  const pending = await db.prepare(`
+    SELECT 1 AS found
+    FROM plugin_submissions
+    WHERE plugin_id = ? AND status = 'pending'
+  `).bind(pluginID).first<{ found: number }>();
+  if (pending !== null) {
+    throw new HTTPError(
+      409,
+      "review_already_pending",
+      "请先取消审核，再删除插件。",
+    );
   }
   await db.batch([
     db.prepare(

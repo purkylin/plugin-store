@@ -103,7 +103,12 @@ const template = String.raw`<!doctype html>
     .plugin-identity > div:last-child { min-width: 0; }
     .plugin-name-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
     .plugin-name { font-weight: 700; }
-    .plugin-id { color: var(--muted); font: 11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap: anywhere; }
+    .plugin-id-row { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 2px; }
+    .plugin-id { min-width: 0; color: var(--muted); font: 11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap: anywhere; }
+    .plugin-id-copy { display: grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; padding: 0; border: 0; border-radius: 6px; color: var(--muted); background: transparent; }
+    .plugin-id-copy svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .plugin-id-copy:hover,.plugin-id-copy:focus-visible { color: var(--text); outline: none; background: rgba(255,255,255,.08); }
+    .plugin-id-copy.copied { color: var(--accent); }
     .market-dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px rgba(85,214,190,.75); }
     .plugin-status-icon { width: 34px; flex: 0 0 34px; display: flex; align-items: center; justify-content: center; }
     .plugin-icon { width: 34px; height: 34px; flex: 0 0 34px; display: block; border: 1px solid rgba(164,198,224,.18); border-radius: 9px; object-fit: cover; background: rgba(2,10,19,.45); }
@@ -373,7 +378,7 @@ const template = String.raw`<!doctype html>
         <div class="card-head"><div><h2>TVBox 配置与插件同步</h2><p class="subtitle">资源列表只负责管理资源，配置生成和插件同步在这里完成。</p></div></div>
         <div class="body">
           <form id="user-tvbox-settings-form">
-            <div class="row"><div class="field"><label for="user-tvbox-plugin-id">关联已上架插件 ID</label><input id="user-tvbox-plugin-id" placeholder="可选，只能关联自己的已上架插件"><span class="help">用户资源默认只生成配置；关联插件后可以手动同步插件版本。</span></div><div class="field"><label>配置地址</label><input id="user-tvbox-config-url" readonly placeholder="生成配置后显示"></div></div>
+            <div class="row"><div class="field"><label for="user-tvbox-plugin-id">关联 TVBox 插件 ID</label><input id="user-tvbox-plugin-id" placeholder="可选，可关联自己的 TVBox 插件"><span class="help">已上架、未上架和私有插件均可关联；同步只更新草稿，不会自动发布。</span></div><div class="field"><label>配置地址</label><input id="user-tvbox-config-url" readonly placeholder="生成配置后显示"></div></div>
             <div class="field"><label class="required" for="user-tvbox-template">TVBox 模板 JSON</label><textarea id="user-tvbox-template" style="min-height:180px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"></textarea><span class="help">服务端只替换 sites 字段，远程 Python 和 CMS 地址不会被服务器下载。</span></div>
             <div class="form-actions"><button class="button" id="user-tvbox-save-settings" type="submit">保存设置</button><button class="button" id="user-tvbox-generate" type="button">仅生成配置</button><button class="button primary" id="user-tvbox-sync" type="button">生成并同步插件</button></div>
             <p class="notice" id="user-tvbox-settings-notice"></p>
@@ -395,7 +400,7 @@ const template = String.raw`<!doctype html>
         <div class="dialog-body">
           <div class="card-head"><div><h2>选择插件类型</h2><p class="subtitle">先选择类型，再填写插件信息。</p></div><button class="button" id="close-plugin-type" type="button">关闭</button></div>
           <div class="plugin-type-options" id="plugin-type-options"></div>
-          <div class="dialog-actions"><button class="button" id="cancel-plugin-type" type="button">取消</button><button class="button primary" id="confirm-plugin-type" type="button" disabled>继续</button></div>
+          <div class="dialog-actions"><button class="button" id="cancel-plugin-type" type="button">取消</button></div>
           <p class="notice" id="plugin-type-notice"></p>
         </div>
       </dialog>
@@ -597,7 +602,6 @@ const template = String.raw`<!doctype html>
     $("new-plugin").addEventListener("click", newPlugin);
     $("close-plugin-type").addEventListener("click", closePluginTypeDialog);
     $("cancel-plugin-type").addEventListener("click", closePluginTypeDialog);
-    $("confirm-plugin-type").addEventListener("click", confirmPluginType);
     $("import-plugins").addEventListener("click", () => $("import-json-file").click());
     $("import-json-file").addEventListener("change", importPlugins);
     $("close-editor").addEventListener("click", closeEditor);
@@ -1199,7 +1203,31 @@ const template = String.raw`<!doctype html>
         const id = document.createElement("div");
         id.className = "plugin-id";
         id.textContent = item.plugin_id;
-        identityText.append(nameRow, id);
+        const idRow = document.createElement("div");
+        idRow.className = "plugin-id-row";
+        const copyID = document.createElement("button");
+        copyID.className = "plugin-id-copy";
+        copyID.type = "button";
+        setPluginIDCopyIcon(copyID, false);
+        copyID.title = "复制插件 ID";
+        copyID.setAttribute("aria-label", "复制 " + item.manifest.name + " 的插件 ID");
+        copyID.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(item.plugin_id);
+            setPluginIDCopyIcon(copyID, true);
+            copyID.title = "已复制";
+            copyID.classList.add("copied");
+            window.setTimeout(() => {
+              setPluginIDCopyIcon(copyID, false);
+              copyID.title = "复制插件 ID";
+              copyID.classList.remove("copied");
+            }, 1400);
+          } catch {
+            showNotice("submission-notice", "复制插件 ID 失败，请手动选择复制。", "error");
+          }
+        });
+        idRow.append(id, copyID);
+        identityText.append(nameRow, idRow);
         identity.append(identityText);
         row.append(cell(identity));
         row.append(cell(item.version));
@@ -1241,6 +1269,12 @@ const template = String.raw`<!doctype html>
         action.append(more);
         row.append(action); tbody.append(row);
       }
+    }
+
+    function setPluginIDCopyIcon(button, copied) {
+      button.innerHTML = copied
+        ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>'
+        : '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"></path></svg>';
     }
 
     function openPluginMenu(item, trigger) {
@@ -1354,6 +1388,10 @@ const template = String.raw`<!doctype html>
     }
 
     async function deletePlugin(item, button) {
+      if (item.status === "pending") {
+        showNotice("submission-notice", "请先取消审核，再删除插件。", "error");
+        return;
+      }
       if (!confirm(
         "确定永久删除 " + item.manifest.name
         + "？所有版本、投稿和审核记录都会删除，此操作无法撤销。"
@@ -1626,7 +1664,6 @@ const template = String.raw`<!doctype html>
       state.selectedPluginType = null;
       renderPluginTypeChoices();
       showNotice("plugin-type-notice", "", "");
-      $("confirm-plugin-type").disabled = true;
       $("plugin-type-dialog").showModal();
     }
 
@@ -1645,8 +1682,7 @@ const template = String.raw`<!doctype html>
         option.append(title, hint);
         option.addEventListener("click", () => {
           state.selectedPluginType = type.value;
-          container.querySelectorAll(".plugin-type-option").forEach((item) => item.classList.toggle("selected", item === option));
-          $("confirm-plugin-type").disabled = false;
+          confirmPluginType();
         });
         container.append(option);
       }

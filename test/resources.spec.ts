@@ -122,6 +122,11 @@ describe("Resource Push and TVBox", () => {
     }).then((response) => response.json())).toMatchObject({
       user: { contribution_points: 2 },
     });
+    expect((await admin("/api/v1/admin/plugin-types", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ value: "tvbox", name: "TVBox" }),
+    })).status).toBe(200);
     const filtered = await admin("/api/v1/admin/resources?type=py&status=enabled&sort=name_asc&page=1&page_size=20");
     expect(filtered.status).toBe(200);
     expect(await filtered.json()).toMatchObject({ total: 1, items: [{ resource_type: "py" }] });
@@ -130,7 +135,7 @@ describe("Resource Push and TVBox", () => {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({ manifest: {
-        type: "hot",
+        type: "tvbox",
         icon: "https://admin.example.com/tvbox.png",
         name: "TVBox Config",
         author: "ResourceAuthor",
@@ -164,7 +169,7 @@ describe("Resource Push and TVBox", () => {
         method: "PUT",
         headers: { cookie, "content-type": "application/json" },
         body: JSON.stringify({ manifest: {
-          type: "hot",
+          type: "tvbox",
           icon: "https://user.example.com/unsaved-icon.png",
           name: "User draft name",
           author: "ResourceAuthor",
@@ -234,7 +239,7 @@ describe("Resource Push and TVBox", () => {
 
     const configResponse = await fetchWorker("https://example.com/tvbox/config/tvbox.json");
     expect(configResponse.status).toBe(200);
-    expect(configResponse.headers.get("cache-control")).toBe("no-cache");
+    expect(configResponse.headers.get("cache-control")).toBe("public, max-age=86400");
     const config = await configResponse.json<{ sites: Array<Record<string, unknown>> }>();
     expect(config.sites).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: "liangzi", name: "量子资源", type: 1, api: "https://cms.example.com/api.php/provide/vod/" }),
